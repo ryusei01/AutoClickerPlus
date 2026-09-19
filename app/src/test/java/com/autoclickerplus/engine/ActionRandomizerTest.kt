@@ -9,12 +9,14 @@ import kotlin.random.Random
 
 class ActionRandomizerTest {
     @Test
-    fun waitIsAlwaysWithinThirtyMillisecondsAndNeverNegative() {
+    fun waitUsesConfiguredJitterAndNeverGoesNegative() {
         val randomizer = ActionRandomizer(Random(1234))
 
         repeat(1_000) {
-            assertTrue(randomizer.waitMs(500) in 470L..530L)
-            assertTrue(randomizer.waitMs(10) in 0L..40L)
+            assertTrue(randomizer.waitMs(500, 30) in 470L..530L)
+            assertTrue(randomizer.waitMs(10, 30) in 0L..40L)
+            assertEquals(500L, randomizer.waitMs(500, 0))
+            assertTrue(randomizer.waitMs(1_000, 200) in 800L..1_200L)
         }
     }
 

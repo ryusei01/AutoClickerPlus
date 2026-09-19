@@ -38,7 +38,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,6 +62,8 @@ import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
+import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
 import com.autoclickerplus.model.formatWaitSeconds
 import com.autoclickerplus.model.jumpTargetLabel
 import com.autoclickerplus.model.parseWaitSeconds
@@ -75,7 +76,6 @@ import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.service.AutoClickAccessibilityService
 import com.autoclickerplus.data.ScriptTransfer
-import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private val viewModel: AutomationViewModel by viewModels()
@@ -548,6 +548,38 @@ private fun CommitTextField(
 }
 
 @Composable
+private fun WaitWithJitterFields(
+    waitMs: Long,
+    jitterMs: Int,
+    waitLabel: String,
+    onWait: (Long) -> Unit,
+    onJitter: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CommitNumberField(
+            value = waitMs.toString(),
+            label = waitLabel,
+            modifier = Modifier.weight(1f),
+            onCommit = { value ->
+                value.toLongOrNull()?.let { onWait(it.coerceAtLeast(0L)) }
+            },
+        )
+        CommitNumberField(
+            value = jitterMs.toString(),
+            label = "揺らぎ ±ms",
+            modifier = Modifier.weight(1f),
+            onCommit = { value ->
+                value.toIntOrNull()?.let { onJitter(it.coerceIn(0, MAX_WAIT_JITTER_MS)) }
+            },
+        )
+    }
+}
+
+@Composable
 private fun ActionTreeCard(
     path: String,
     action: AutomationAction,
@@ -649,15 +681,12 @@ private fun IfBlockCard(
                         },
                     ) { Text(block.operator.name) }
                 }
-                CommitNumberField(
-                    value = block.waitAfterMs.toString(),
-                    label = "次の動作までの待機時間 ms (±30)",
-                    modifier = Modifier.fillMaxWidth(),
-                    onCommit = { value ->
-                        value.toLongOrNull()?.let { wait ->
-                            viewModel.replace(block.copy(waitAfterMs = wait.coerceAtLeast(0L)))
-                        }
-                    },
+                WaitWithJitterFields(
+                    waitMs = block.waitAfterMs,
+                    jitterMs = block.waitJitterMs,
+                    waitLabel = "次の動作までの待機時間 ms",
+                    onWait = { viewModel.replace(block.copy(waitAfterMs = it)) },
+                    onJitter = { viewModel.replace(block.copy(waitJitterMs = it)) },
                 )
                 Text("条件", style = MaterialTheme.typography.titleSmall)
                 block.conditions.forEach { condition ->
@@ -685,12 +714,14 @@ private fun IfBlockCard(
                     actions = block.thenActions,
                     jumpTo = block.thenJumpTo,
                     waitMs = block.thenWaitMs,
+                    waitJitterMs = block.thenWaitJitterMs,
                     rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.THEN,
                     viewModel = viewModel,
                     onJumpToChange = { viewModel.replace(block.copy(thenJumpTo = it)) },
                     onWaitChange = { viewModel.replace(block.copy(thenWaitMs = it)) },
+                    onWaitJitterChange = { viewModel.replace(block.copy(thenWaitJitterMs = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -700,12 +731,14 @@ private fun IfBlockCard(
                     actions = block.elseActions,
                     jumpTo = block.elseJumpTo,
                     waitMs = block.elseWaitMs,
+                    waitJitterMs = block.elseWaitJitterMs,
                     rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.ELSE,
                     viewModel = viewModel,
                     onJumpToChange = { viewModel.replace(block.copy(elseJumpTo = it)) },
                     onWaitChange = { viewModel.replace(block.copy(elseWaitMs = it)) },
+                    onWaitJitterChange = { viewModel.replace(block.copy(elseWaitJitterMs = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -819,12 +852,14 @@ private fun BranchEditor(
     actions: List<AutomationAction>,
     jumpTo: Int?,
     waitMs: Long,
+    waitJitterMs: Int,
     rootNumber: Int,
     blockId: String,
     side: BranchSide,
     viewModel: AutomationViewModel,
     onJumpToChange: (Int?) -> Unit,
     onWaitChange: (Long) -> Unit,
+    onWaitJitterChange: (Int) -> Unit,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
@@ -902,13 +937,12 @@ private fun BranchEditor(
                 )
             }
         }
-        CommitNumberField(
-            value = waitMs.toString(),
-            label = "このあと待機 ms (±30)",
-            modifier = Modifier.fillMaxWidth(),
-            onCommit = { value ->
-                value.toLongOrNull()?.let { onWaitChange(it.coerceAtLeast(0L)) }
-            },
+        WaitWithJitterFields(
+            waitMs = waitMs,
+            jitterMs = waitJitterMs,
+            waitLabel = "このあと待機 ms",
+            onWait = onWaitChange,
+            onJitter = onWaitJitterChange,
         )
         Text(
             "今より小さい番号は戻り、大きい番号は先へ進みます",
@@ -975,6 +1009,16 @@ private fun WaitCard(
                     onCommit = { value ->
                         parseWaitSeconds(value)?.let { ms ->
                             onReplace(action.copy(durationMs = ms))
+                        }
+                    },
+                )
+                CommitNumberField(
+                    value = action.waitJitterMs.toString(),
+                    label = "揺らぎ ±ms",
+                    modifier = Modifier.fillMaxWidth(),
+                    onCommit = { value ->
+                        value.toIntOrNull()?.let {
+                            onReplace(action.copy(waitJitterMs = it.coerceIn(0, MAX_WAIT_JITTER_MS)))
                         }
                     },
                 )
@@ -1067,11 +1111,21 @@ private fun ActionCard(
                 ) {
                     CommitNumberField(
                         value = action.waitAfterMs.toString(),
-                        label = "次の動作までの待機時間 ms (±30)",
+                        label = "次の動作までの待機時間 ms",
                         modifier = Modifier.weight(1f),
                         onCommit = { value ->
                             value.toLongOrNull()?.let { wait ->
                                 onReplace(action.withWait(wait))
+                            }
+                        },
+                    )
+                    CommitNumberField(
+                        value = action.waitJitterMs.toString(),
+                        label = "揺らぎ ±ms",
+                        modifier = Modifier.weight(1f),
+                        onCommit = { value ->
+                            value.toIntOrNull()?.let { jitter ->
+                                onReplace(action.withWaitJitter(jitter))
                             }
                         },
                     )
@@ -1097,12 +1151,13 @@ private fun ActionCard(
                     }
                 }
 
-                Text("位置の揺らぎ: ±${action.jitterPx}px")
-                Slider(
-                    value = action.jitterPx.toFloat(),
-                    onValueChange = { onReplace(action.withJitter(it.roundToInt())) },
-                    valueRange = 3f..10f,
-                    steps = 6,
+                CommitNumberField(
+                    value = action.jitterPx.toString(),
+                    label = "位置の揺らぎ ±px（0でなし）",
+                    modifier = Modifier.fillMaxWidth(),
+                    onCommit = { value ->
+                        value.toIntOrNull()?.let { onReplace(action.withJitter(it)) }
+                    },
                 )
             }
         }
@@ -1117,9 +1172,17 @@ private fun AutomationAction.withWait(waitMs: Long): AutomationAction = when (th
     is AutomationAction.Wait -> this
 }
 
+private fun AutomationAction.withWaitJitter(jitterMs: Int): AutomationAction = when (this) {
+    is AutomationAction.Tap -> copy(waitJitterMs = jitterMs.coerceIn(0, MAX_WAIT_JITTER_MS))
+    is AutomationAction.Swipe -> copy(waitJitterMs = jitterMs.coerceIn(0, MAX_WAIT_JITTER_MS))
+    is AutomationAction.IfBlock -> copy(waitJitterMs = jitterMs.coerceIn(0, MAX_WAIT_JITTER_MS))
+    is AutomationAction.BreakLoop -> this
+    is AutomationAction.Wait -> copy(waitJitterMs = jitterMs.coerceIn(0, MAX_WAIT_JITTER_MS))
+}
+
 private fun AutomationAction.withJitter(jitterPx: Int): AutomationAction = when (this) {
-    is AutomationAction.Tap -> copy(jitterPx = jitterPx.coerceIn(3, 10))
-    is AutomationAction.Swipe -> copy(jitterPx = jitterPx.coerceIn(3, 10))
+    is AutomationAction.Tap -> copy(jitterPx = jitterPx.coerceIn(0, MAX_POSITION_JITTER_PX))
+    is AutomationAction.Swipe -> copy(jitterPx = jitterPx.coerceIn(0, MAX_POSITION_JITTER_PX))
     is AutomationAction.IfBlock -> this
     is AutomationAction.BreakLoop -> this
     is AutomationAction.Wait -> this

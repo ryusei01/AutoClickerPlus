@@ -49,8 +49,11 @@ enum class RunnerState {
 }
 
 class ActionRandomizer(private val random: Random = Random.Default) {
-    fun waitMs(baseMs: Long): Long =
-        (baseMs + random.nextInt(-TIME_JITTER_MS, TIME_JITTER_MS + 1)).coerceAtLeast(0L)
+    fun waitMs(baseMs: Long, jitterMs: Int = DEFAULT_TIME_JITTER_MS): Long {
+        val jitter = jitterMs.coerceAtLeast(0)
+        if (jitter == 0) return baseMs.coerceAtLeast(0L)
+        return (baseMs + random.nextInt(-jitter, jitter + 1)).coerceAtLeast(0L)
+    }
 
     fun tapPoint(action: AutomationAction.Tap, bounds: ScreenBounds): GesturePoint {
         val radius = sqrt(random.nextDouble()) * action.jitterPx
@@ -99,7 +102,7 @@ class ActionRandomizer(private val random: Random = Random.Default) {
     private val ScreenBounds.maxY: Float get() = (height - 1).coerceAtLeast(0).toFloat()
 
     private companion object {
-        const val TIME_JITTER_MS = 30
+        const val DEFAULT_TIME_JITTER_MS = 30
     }
 }
 
@@ -176,7 +179,7 @@ class AutomationRunner(
         while (index < actions.size) {
             val action = actions[index]
             val outcome = executeAction(action, bounds)
-            wait(randomizer.waitMs(action.waitAfterMs))
+            wait(randomizer.waitMs(action.waitAfterMs, action.waitJitterMs))
             when (outcome) {
                 BranchOutcome.Continue -> index++
                 is BranchOutcome.Jump -> {
@@ -230,14 +233,15 @@ class AutomationRunner(
                     return branchOutcome
                 }
                 val exitWait = if (matched) action.thenWaitMs else action.elseWaitMs
-                wait(randomizer.waitMs(exitWait))
+                val exitJitter = if (matched) action.thenWaitJitterMs else action.elseWaitJitterMs
+                wait(randomizer.waitMs(exitWait, exitJitter))
                 val destination = if (matched) action.thenJumpTo else action.elseJumpTo
                 if (destination != null && destination >= 1) {
                     return BranchOutcome.Jump(destination)
                 }
             }
             is AutomationAction.BreakLoop -> throw LoopBreakException()
-            is AutomationAction.Wait -> wait(randomizer.waitMs(action.durationMs))
+            is AutomationAction.Wait -> wait(randomizer.waitMs(action.durationMs, action.waitJitterMs))
         }
         return BranchOutcome.Continue
     }

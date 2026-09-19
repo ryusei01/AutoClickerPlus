@@ -8,6 +8,7 @@ import java.util.UUID
 sealed class AutomationAction {
     abstract val id: String
     abstract val waitAfterMs: Long
+    abstract val waitJitterMs: Int
     abstract val jitterPx: Int
 
     @Serializable
@@ -17,6 +18,7 @@ sealed class AutomationAction {
         val x: Float = 540f,
         val y: Float = 1000f,
         override val waitAfterMs: Long = 500L,
+        override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 5,
     ) : AutomationAction()
 
@@ -31,6 +33,7 @@ sealed class AutomationAction {
         val durationMs: Long = 300L,
         val stopAtEnd: Boolean = true,
         override val waitAfterMs: Long = 300L,
+        override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 5,
     ) : AutomationAction()
 
@@ -46,7 +49,10 @@ sealed class AutomationAction {
         val elseJumpTo: Int? = null,
         val thenWaitMs: Long = 0L,
         val elseWaitMs: Long = 0L,
+        val thenWaitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
+        val elseWaitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val waitAfterMs: Long = 0L,
+        override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
 
@@ -55,6 +61,7 @@ sealed class AutomationAction {
     data class BreakLoop(
         override val id: String = UUID.randomUUID().toString(),
         override val waitAfterMs: Long = 0L,
+        override val waitJitterMs: Int = 0,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
 
@@ -64,6 +71,7 @@ sealed class AutomationAction {
         override val id: String = UUID.randomUUID().toString(),
         val durationMs: Long = 1_000L,
         override val waitAfterMs: Long = 0L,
+        override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
 }
@@ -178,7 +186,8 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         x = x.coerceAtLeast(0f),
         y = y.coerceAtLeast(0f),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
-        jitterPx = jitterPx.coerceIn(3, 10),
+        waitJitterMs = waitJitterMs.normalizedWaitJitter(),
+        jitterPx = jitterPx.normalizedPositionJitter(),
     )
     is AutomationAction.Swipe -> copy(
         startX = startX.coerceAtLeast(0f),
@@ -187,7 +196,8 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         endY = endY.coerceAtLeast(0f),
         durationMs = durationMs.coerceIn(100L, 2_000L),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
-        jitterPx = jitterPx.coerceIn(3, 10),
+        waitJitterMs = waitJitterMs.normalizedWaitJitter(),
+        jitterPx = jitterPx.normalizedPositionJitter(),
     )
     is AutomationAction.IfBlock -> copy(
         conditions = conditions.ifEmpty { listOf(AutomationCondition.TextExists()) }
@@ -198,21 +208,33 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         elseJumpTo = elseJumpTo.normalizedJump(),
         thenWaitMs = thenWaitMs.coerceAtLeast(0L),
         elseWaitMs = elseWaitMs.coerceAtLeast(0L),
+        thenWaitJitterMs = thenWaitJitterMs.normalizedWaitJitter(),
+        elseWaitJitterMs = elseWaitJitterMs.normalizedWaitJitter(),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
+        waitJitterMs = waitJitterMs.normalizedWaitJitter(),
         jitterPx = 3,
     )
     is AutomationAction.BreakLoop -> copy(
         waitAfterMs = 0L,
+        waitJitterMs = 0,
         jitterPx = 3,
     )
     is AutomationAction.Wait -> copy(
         durationMs = durationMs.coerceIn(0L, MAX_WAIT_MS),
         waitAfterMs = 0L,
+        waitJitterMs = waitJitterMs.normalizedWaitJitter(),
         jitterPx = 3,
     )
 }
 
 const val MAX_WAIT_MS = 3_600_000L
+const val DEFAULT_WAIT_JITTER_MS = 30
+const val MAX_WAIT_JITTER_MS = 10_000
+const val MAX_POSITION_JITTER_PX = 50
+
+fun Int.normalizedWaitJitter(): Int = coerceIn(0, MAX_WAIT_JITTER_MS)
+
+fun Int.normalizedPositionJitter(): Int = coerceIn(0, MAX_POSITION_JITTER_PX)
 
 fun formatWaitSeconds(durationMs: Long): String {
     if (durationMs % 1_000L == 0L) return (durationMs / 1_000L).toString()

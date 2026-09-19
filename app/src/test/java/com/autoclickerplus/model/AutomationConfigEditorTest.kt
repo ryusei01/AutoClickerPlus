@@ -38,7 +38,7 @@ class AutomationConfigEditorTest {
         val action = replaced.actions.single() as AutomationAction.Tap
 
         assertEquals(0L, action.waitAfterMs)
-        assertEquals(10, action.jitterPx)
+        assertEquals(50, action.jitterPx)
         assertEquals(
             1,
             AutomationConfigEditor.setRepeatCount(replaced, -5).repeatCount,

@@ -31,6 +31,8 @@ import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
+import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
 import com.autoclickerplus.model.formatWaitSeconds
 import com.autoclickerplus.model.jumpTargetLabel
 import com.autoclickerplus.model.parseWaitSeconds
@@ -278,10 +280,16 @@ class FloatingEditorOverlay(
                     })
                 })
                 addView(numberField(
-                    "次の動作までの待機時間 ms（±30）",
+                    "次の動作までの待機時間 ms",
                     action.waitAfterMs.toString(),
                 ) { value ->
                     value.toLongOrNull()?.let { callbacks.onReplace(action.withWait(it)) }
+                })
+                addView(numberField(
+                    "待機の揺らぎ ±ms",
+                    action.waitJitterMs.toString(),
+                ) { value ->
+                    value.toIntOrNull()?.let { callbacks.onReplace(action.withWaitJitter(it)) }
                 })
                 if (action is AutomationAction.Swipe) {
                     addView(numberField("スクロール時間 ms", action.durationMs.toString()) { value ->
@@ -296,17 +304,11 @@ class FloatingEditorOverlay(
                         callbacks.onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
                     })
                 }
-                addView(LinearLayout(service).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(label("位置の揺らぎ ±${action.jitterPx}px"),
-                        LinearLayout.LayoutParams(0, dp(44), 1f))
-                    addView(smallButton("−", action.jitterPx > 3) {
-                        callbacks.onReplace(action.withJitter(action.jitterPx - 1))
-                    })
-                    addView(smallButton("+", action.jitterPx < 10) {
-                        callbacks.onReplace(action.withJitter(action.jitterPx + 1))
-                    })
+                addView(numberField(
+                    "位置の揺らぎ ±px（0でなし）",
+                    action.jitterPx.toString(),
+                ) { value ->
+                    value.toIntOrNull()?.let { callbacks.onReplace(action.withJitter(it)) }
                 })
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -357,6 +359,12 @@ class FloatingEditorOverlay(
                     callbacks.onReplace(action.copy(durationMs = ms))
                 }
             })
+            addView(numberField(
+                "揺らぎ ±ms",
+                action.waitJitterMs.toString(),
+            ) { value ->
+                value.toIntOrNull()?.let { callbacks.onReplace(action.withWaitJitter(it)) }
+            })
         }
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -388,10 +396,16 @@ class FloatingEditorOverlay(
             )
         })
         addView(numberField(
-            "次の動作までの待機時間 ms（±30）",
+            "次の動作までの待機時間 ms",
             block.waitAfterMs.toString(),
         ) { value ->
             value.toLongOrNull()?.let { callbacks.onReplace(block.withWait(it)) }
+        })
+        addView(numberField(
+            "待機の揺らぎ ±ms",
+            block.waitJitterMs.toString(),
+        ) { value ->
+            value.toIntOrNull()?.let { callbacks.onReplace(block.withWaitJitter(it)) }
         })
         addView(label("条件"))
         block.conditions.forEach { addView(conditionEditor(block.id, it)) }
@@ -504,6 +518,7 @@ class FloatingEditorOverlay(
         val actions = if (side == BranchSide.THEN) block.thenActions else block.elseActions
         val jumpTo = if (side == BranchSide.THEN) block.thenJumpTo else block.elseJumpTo
         val waitMs = if (side == BranchSide.THEN) block.thenWaitMs else block.elseWaitMs
+        val waitJitterMs = if (side == BranchSide.THEN) block.thenWaitJitterMs else block.elseWaitJitterMs
         val ownerNumber = pathPrefix.takeWhile { it.isDigit() }.toIntOrNull() ?: 1
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(6), 0, dp(6))
@@ -559,13 +574,25 @@ class FloatingEditorOverlay(
                 )
             })
         }
-        addView(numberField("このあと待機 ms（±30）", waitMs.toString()) { value ->
+        addView(numberField("このあと待機 ms", waitMs.toString()) { value ->
             value.toLongOrNull()?.let { wait ->
                 callbacks.onReplace(
                     if (side == BranchSide.THEN) {
                         block.copy(thenWaitMs = wait.coerceAtLeast(0L))
                     } else {
                         block.copy(elseWaitMs = wait.coerceAtLeast(0L))
+                    },
+                )
+            }
+        })
+        addView(numberField("揺らぎ ±ms", waitJitterMs.toString()) { value ->
+            value.toIntOrNull()?.let { jitter ->
+                val normalized = jitter.coerceIn(0, MAX_WAIT_JITTER_MS)
+                callbacks.onReplace(
+                    if (side == BranchSide.THEN) {
+                        block.copy(thenWaitJitterMs = normalized)
+                    } else {
+                        block.copy(elseWaitJitterMs = normalized)
                     },
                 )
             }
@@ -795,9 +822,17 @@ class FloatingEditorOverlay(
         is AutomationAction.Wait -> this
     }
 
+    private fun AutomationAction.withWaitJitter(value: Int): AutomationAction = when (this) {
+        is AutomationAction.Tap -> copy(waitJitterMs = value.coerceIn(0, MAX_WAIT_JITTER_MS))
+        is AutomationAction.Swipe -> copy(waitJitterMs = value.coerceIn(0, MAX_WAIT_JITTER_MS))
+        is AutomationAction.IfBlock -> copy(waitJitterMs = value.coerceIn(0, MAX_WAIT_JITTER_MS))
+        is AutomationAction.BreakLoop -> this
+        is AutomationAction.Wait -> copy(waitJitterMs = value.coerceIn(0, MAX_WAIT_JITTER_MS))
+    }
+
     private fun AutomationAction.withJitter(value: Int): AutomationAction = when (this) {
-        is AutomationAction.Tap -> copy(jitterPx = value.coerceIn(3, 10))
-        is AutomationAction.Swipe -> copy(jitterPx = value.coerceIn(3, 10))
+        is AutomationAction.Tap -> copy(jitterPx = value.coerceIn(0, MAX_POSITION_JITTER_PX))
+        is AutomationAction.Swipe -> copy(jitterPx = value.coerceIn(0, MAX_POSITION_JITTER_PX))
         is AutomationAction.IfBlock -> this
         is AutomationAction.BreakLoop -> this
         is AutomationAction.Wait -> this
