@@ -72,6 +72,7 @@ class FloatingEditorOverlay(
     private var params: WindowManager.LayoutParams? = null
     private var config = AutomationConfig()
     private val expandedDetailIds = mutableSetOf<String>()
+    private val ifTabById = mutableMapOf<String, Int>()
     private var rendering = false
 
     val isVisible: Boolean get() = root != null
@@ -446,50 +447,98 @@ class FloatingEditorOverlay(
         background = roundedBackground(0xFF4A3A62.toInt(), dp(12).toFloat())
         addView(flowNodeHeader(path, block, expanded, index, siblingCount))
         if (expanded) {
-        addView(smallButton(block.operator.name, true) {
-            callbacks.onReplace(
-                block.copy(
-                    operator = if (block.operator == ConditionOperator.AND) {
-                        ConditionOperator.OR
-                    } else {
-                        ConditionOperator.AND
-                    },
-                ),
-            )
-        })
-        addView(numberField(
-            "次の動作までの待機時間 ms",
-            block.waitAfterMs.toString(),
-        ) { value ->
-            value.toLongOrNull()?.let { callbacks.onReplace(block.withWait(it)) }
-        })
-        addView(numberField(
-            "待機の揺らぎ ±ms",
-            block.waitJitterMs.toString(),
-        ) { value ->
-            value.toIntOrNull()?.let { callbacks.onReplace(block.withWaitJitter(it)) }
-        })
-        addView(label("条件"))
-        block.conditions.forEach { addView(conditionEditor(block.id, it)) }
-        addView(LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(smallButton("+文字", true) {
-                callbacks.onAddCondition(block.id, AutomationCondition.TextExists())
-            })
-            addView(smallButton("+活性", true) {
-                callbacks.onAddCondition(block.id, AutomationCondition.UiState())
-            })
-            addView(smallButton("+色", true) {
-                callbacks.onAddCondition(block.id, AutomationCondition.PixelColor())
-            })
-        })
-        addView(branchEditor("$path-T", "THEN", block, BranchSide.THEN))
-        addView(branchEditor("$path-E", "ELSE", block, BranchSide.ELSE))
+            val tab = ifTabById[block.id] ?: 0
+            addView(ifTabBar(block, tab))
+            when (tab) {
+                1 -> addView(branchEditor("$path-T", block, BranchSide.THEN))
+                2 -> addView(branchEditor("$path-E", block, BranchSide.ELSE))
+                else -> {
+                    addView(smallButton("条件の結び: ${block.operator.name}", true) {
+                        callbacks.onReplace(
+                            block.copy(
+                                operator = if (block.operator == ConditionOperator.AND) {
+                                    ConditionOperator.OR
+                                } else {
+                                    ConditionOperator.AND
+                                },
+                            ),
+                        )
+                    })
+                    addView(numberField(
+                        "次の動作までの待機時間 ms",
+                        block.waitAfterMs.toString(),
+                    ) { value ->
+                        value.toLongOrNull()?.let { callbacks.onReplace(block.withWait(it)) }
+                    })
+                    addView(numberField(
+                        "待機の揺らぎ ±ms",
+                        block.waitJitterMs.toString(),
+                    ) { value ->
+                        value.toIntOrNull()?.let { callbacks.onReplace(block.withWaitJitter(it)) }
+                    })
+                    block.conditions.forEach { addView(conditionEditor(block.id, it)) }
+                    addView(LinearLayout(service).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        addView(smallButton("+文字", true) {
+                            callbacks.onAddCondition(block.id, AutomationCondition.TextExists())
+                        })
+                        addView(smallButton("+活性", true) {
+                            callbacks.onAddCondition(block.id, AutomationCondition.UiState())
+                        })
+                        addView(smallButton("+色", true) {
+                            callbacks.onAddCondition(block.id, AutomationCondition.PixelColor())
+                        })
+                    })
+                }
+            }
         }
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { setMargins(0, dp(2), 0, dp(2)) }
+    }
+
+    private fun ifTabBar(
+        block: AutomationAction.IfBlock,
+        selected: Int,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(0, dp(4), 0, dp(4))
+        val tabs = listOf(
+            0 to "条件 (${block.conditions.size})",
+            1 to "成立時 (${block.thenActions.size})",
+            2 to "不成立時 (${block.elseActions.size})",
+        )
+        tabs.forEach { (index, title) ->
+            addView(
+                tabButton(title, selected == index) {
+                    ifTabById[block.id] = index
+                    render()
+                },
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                    setMargins(dp(2), 0, dp(2), 0)
+                },
+            )
+        }
+    }
+
+    private fun tabButton(
+        text: String,
+        selected: Boolean,
+        onClick: () -> Unit,
+    ) = TextView(service).apply {
+        this.text = text
+        textSize = 12f
+        gravity = Gravity.CENTER
+        setTextColor(Color.WHITE)
+        background = roundedBackground(
+            if (selected) 0xFF6A5A8A.toInt() else 0xFF332A42.toInt(),
+            dp(8).toFloat(),
+        )
+        setOnClickListener {
+            commitFocusedField()
+            onClick()
+        }
     }
 
     private fun conditionEditor(
@@ -573,14 +622,12 @@ class FloatingEditorOverlay(
 
     private fun branchEditor(
         pathPrefix: String,
-        title: String,
         block: AutomationAction.IfBlock,
         side: BranchSide,
     ) = LinearLayout(service).apply {
         val actions = if (side == BranchSide.THEN) block.thenActions else block.elseActions
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(10), dp(6), 0, dp(6))
-        addView(label("◆ $title"))
+        setPadding(dp(4), dp(6), 0, dp(6))
         if (actions.isEmpty()) {
             addView(label("（空）"))
         }

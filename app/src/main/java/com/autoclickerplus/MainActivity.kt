@@ -38,6 +38,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -301,6 +304,8 @@ private fun AutomationScreen(
     }
 }
 
+private enum class IfEditTab { CONDITION, THEN, ELSE }
+
 @Composable
 private fun ScriptSection(
     library: ScriptLibrary,
@@ -309,52 +314,59 @@ private fun ScriptSection(
     onImport: () -> Unit,
 ) {
     val active = library.activeScript
+    val selectedIndex = library.scripts.indexOfFirst { it.id == active.id }.coerceAtLeast(0)
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp),
     ) {
-        Column(Modifier.padding(10.dp)) {
-            Text("保存スクリプト", style = MaterialTheme.typography.titleMedium)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(library.scripts, key = { it.id }) { script ->
-                    if (script.id == active.id) {
-                        Button(onClick = { viewModel.selectScript(script.id) }) {
-                            Text(script.name)
-                        }
-                    } else {
-                        OutlinedButton(onClick = { viewModel.selectScript(script.id) }) {
-                            Text(script.name)
-                        }
-                    }
+        Column(Modifier.padding(bottom = 10.dp)) {
+            Text(
+                "スクリプト",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp),
+            )
+            ScrollableTabRow(
+                selectedTabIndex = selectedIndex,
+                edgePadding = 8.dp,
+                containerColor = Color.Transparent,
+            ) {
+                library.scripts.forEach { script ->
+                    Tab(
+                        selected = script.id == active.id,
+                        onClick = { viewModel.selectScript(script.id) },
+                        text = { Text(script.name, maxLines = 1) },
+                    )
                 }
             }
-            CommitTextField(
-                value = active.name,
-                label = "スクリプト名",
-                modifier = Modifier.fillMaxWidth(),
-                onCommit = { viewModel.renameActiveScript(it) },
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                OutlinedButton(onClick = { viewModel.addScript("新しいスクリプト") }) {
-                    Text("新規")
-                }
-                OutlinedButton(onClick = viewModel::duplicateActiveScript) {
-                    Text("複製")
-                }
-                OutlinedButton(
-                    onClick = viewModel::deleteActiveScript,
-                    enabled = library.scripts.size > 1,
+            Column(Modifier.padding(horizontal = 10.dp)) {
+                CommitTextField(
+                    value = active.name,
+                    label = "スクリプト名",
+                    modifier = Modifier.fillMaxWidth(),
+                    onCommit = { viewModel.renameActiveScript(it) },
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("削除")
+                    OutlinedButton(onClick = { viewModel.addScript("新しいスクリプト") }) {
+                        Text("新規")
+                    }
+                    OutlinedButton(onClick = viewModel::duplicateActiveScript) {
+                        Text("複製")
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::deleteActiveScript,
+                        enabled = library.scripts.size > 1,
+                    ) {
+                        Text("削除")
+                    }
+                    OutlinedButton(onClick = onExport) { Text("全件Export") }
+                    OutlinedButton(onClick = onImport) { Text("Import") }
                 }
-                OutlinedButton(onClick = onExport) { Text("全件Export") }
-                OutlinedButton(onClick = onImport) { Text("Import") }
             }
         }
     }
@@ -686,6 +698,7 @@ private fun IfBlockCard(
     onPickColor: (String, String) -> Unit,
 ) {
     var expanded by remember(block.id) { mutableStateOf(false) }
+    var tab by remember(block.id) { mutableStateOf(IfEditTab.CONDITION) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             FlowNodeHeader(
@@ -702,76 +715,98 @@ private fun IfBlockCard(
                 onRemove = { viewModel.remove(block.id) },
             )
             if (expanded) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                TabRow(
+                    selectedTabIndex = tab.ordinal,
+                    containerColor = Color.Transparent,
                     modifier = Modifier.padding(top = 4.dp),
                 ) {
-                    Text("条件の結び", style = MaterialTheme.typography.bodySmall)
-                    TextButton(
-                        onClick = {
-                            viewModel.replace(
-                                block.copy(
-                                    operator = if (block.operator == ConditionOperator.AND) {
-                                        ConditionOperator.OR
-                                    } else {
-                                        ConditionOperator.AND
-                                    },
-                                ),
-                            )
-                        },
-                    ) { Text(block.operator.name) }
-                }
-                WaitWithJitterFields(
-                    waitMs = block.waitAfterMs,
-                    jitterMs = block.waitJitterMs,
-                    waitLabel = "次の動作までの待機時間 ms",
-                    onWait = { viewModel.replace(block.copy(waitAfterMs = it)) },
-                    onJitter = { viewModel.replace(block.copy(waitJitterMs = it)) },
-                )
-                Text("条件", style = MaterialTheme.typography.titleSmall)
-                block.conditions.forEach { condition ->
-                    ConditionEditor(
-                        condition = condition,
-                        onReplace = { viewModel.replaceCondition(block.id, it) },
-                        onRemove = { viewModel.removeCondition(block.id, condition.id) },
-                        onPickColor = { onPickColor(block.id, condition.id) },
+                    Tab(
+                        selected = tab == IfEditTab.CONDITION,
+                        onClick = { tab = IfEditTab.CONDITION },
+                        text = { Text("条件 (${block.conditions.size})", maxLines = 1) },
+                    )
+                    Tab(
+                        selected = tab == IfEditTab.THEN,
+                        onClick = { tab = IfEditTab.THEN },
+                        text = { Text("成立時 (${block.thenActions.size})", maxLines = 1) },
+                    )
+                    Tab(
+                        selected = tab == IfEditTab.ELSE,
+                        onClick = { tab = IfEditTab.ELSE },
+                        text = { Text("不成立時 (${block.elseActions.size})", maxLines = 1) },
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = {
-                        viewModel.addCondition(block.id, AutomationCondition.TextExists())
-                    }) { Text("+文字") }
-                    TextButton(onClick = {
-                        viewModel.addCondition(block.id, AutomationCondition.UiState())
-                    }) { Text("+活性") }
-                    TextButton(onClick = {
-                        viewModel.addCondition(block.id, AutomationCondition.PixelColor())
-                    }) { Text("+色") }
+                when (tab) {
+                    IfEditTab.CONDITION -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp),
+                        ) {
+                            Text("条件の結び", style = MaterialTheme.typography.bodySmall)
+                            TextButton(
+                                onClick = {
+                                    viewModel.replace(
+                                        block.copy(
+                                            operator = if (block.operator == ConditionOperator.AND) {
+                                                ConditionOperator.OR
+                                            } else {
+                                                ConditionOperator.AND
+                                            },
+                                        ),
+                                    )
+                                },
+                            ) { Text(block.operator.name) }
+                        }
+                        WaitWithJitterFields(
+                            waitMs = block.waitAfterMs,
+                            jitterMs = block.waitJitterMs,
+                            waitLabel = "次の動作までの待機時間 ms",
+                            onWait = { viewModel.replace(block.copy(waitAfterMs = it)) },
+                            onJitter = { viewModel.replace(block.copy(waitJitterMs = it)) },
+                        )
+                        block.conditions.forEach { condition ->
+                            ConditionEditor(
+                                condition = condition,
+                                onReplace = { viewModel.replaceCondition(block.id, it) },
+                                onRemove = { viewModel.removeCondition(block.id, condition.id) },
+                                onPickColor = { onPickColor(block.id, condition.id) },
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = {
+                                viewModel.addCondition(block.id, AutomationCondition.TextExists())
+                            }) { Text("+文字") }
+                            TextButton(onClick = {
+                                viewModel.addCondition(block.id, AutomationCondition.UiState())
+                            }) { Text("+活性") }
+                            TextButton(onClick = {
+                                viewModel.addCondition(block.id, AutomationCondition.PixelColor())
+                            }) { Text("+色") }
+                        }
+                    }
+                    IfEditTab.THEN -> BranchEditor(
+                        pathPrefix = "$path-T",
+                        actions = block.thenActions,
+                        rootNumber = rootNumber,
+                        jumpPaths = jumpPaths,
+                        blockId = block.id,
+                        side = BranchSide.THEN,
+                        viewModel = viewModel,
+                        onPickCoordinates = onPickCoordinates,
+                        onPickColor = onPickColor,
+                    )
+                    IfEditTab.ELSE -> BranchEditor(
+                        pathPrefix = "$path-E",
+                        actions = block.elseActions,
+                        rootNumber = rootNumber,
+                        jumpPaths = jumpPaths,
+                        blockId = block.id,
+                        side = BranchSide.ELSE,
+                        viewModel = viewModel,
+                        onPickCoordinates = onPickCoordinates,
+                        onPickColor = onPickColor,
+                    )
                 }
-                BranchEditor(
-                    title = "THEN",
-                    pathPrefix = "$path-T",
-                    actions = block.thenActions,
-                    rootNumber = rootNumber,
-                    jumpPaths = jumpPaths,
-                    blockId = block.id,
-                    side = BranchSide.THEN,
-                    viewModel = viewModel,
-                    onPickCoordinates = onPickCoordinates,
-                    onPickColor = onPickColor,
-                )
-                BranchEditor(
-                    title = "ELSE",
-                    pathPrefix = "$path-E",
-                    actions = block.elseActions,
-                    rootNumber = rootNumber,
-                    jumpPaths = jumpPaths,
-                    blockId = block.id,
-                    side = BranchSide.ELSE,
-                    viewModel = viewModel,
-                    onPickCoordinates = onPickCoordinates,
-                    onPickColor = onPickColor,
-                )
             }
         }
     }
@@ -877,7 +912,6 @@ private fun ConditionEditor(
 
 @Composable
 private fun BranchEditor(
-    title: String,
     pathPrefix: String,
     actions: List<AutomationAction>,
     rootNumber: Int,
@@ -890,14 +924,13 @@ private fun BranchEditor(
 ) {
     Column(
         Modifier
-            .padding(start = 8.dp, top = 10.dp)
+            .padding(top = 8.dp)
             .background(
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(10.dp),
             )
             .padding(8.dp),
     ) {
-        Text("◆ $title", style = MaterialTheme.typography.titleSmall)
         if (actions.isEmpty()) {
             Text(
                 "（空）",
