@@ -463,8 +463,10 @@ class AutomationRunnerTest {
             actions = listOf(
                 AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 3),
                 AutomationAction.IfBlock(
-                    thenActions = listOf(AutomationAction.Tap(x = 80f, y = 10f, jitterPx = 3)),
-                    thenJumpTo = 1,
+                    thenActions = listOf(
+                        AutomationAction.Tap(x = 80f, y = 10f, jitterPx = 3),
+                        AutomationAction.JumpTo(targetNumber = 1),
+                    ),
                 ),
             ),
             repeatMode = RepeatMode.COUNT,
@@ -508,8 +510,10 @@ class AutomationRunnerTest {
         val config = AutomationConfig(
             actions = listOf(
                 AutomationAction.IfBlock(
-                    elseJumpTo = 3,
-                    elseActions = listOf(AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 3)),
+                    elseActions = listOf(
+                        AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 3),
+                        AutomationAction.JumpTo(targetNumber = 3),
+                    ),
                 ),
                 AutomationAction.Tap(x = 200f, y = 10f, jitterPx = 3),
                 AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 3),
@@ -566,12 +570,16 @@ class AutomationRunnerTest {
     }
 
     @Test
-    fun thenContinueWaitsConfiguredDelay() = runTest {
-        val waits = mutableListOf<Long>()
+    fun jumpToActionMovesExecution() = runTest {
+        val calls = mutableListOf<String>()
         val runner = AutomationRunner(
             scope = this,
             executor = object : GestureExecutor {
-                override suspend fun tap(point: GesturePoint) = true
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += point.x.toInt().toString()
+                    return true
+                }
+
                 override suspend fun swipe(
                     start: GesturePoint,
                     end: GesturePoint,
@@ -580,14 +588,15 @@ class AutomationRunnerTest {
                 ) = true
             },
             conditionEvaluator = ConditionEvaluator { _, _ -> true },
-            randomizer = ActionRandomizer(Random(1)),
-            wait = { waits += it },
+            wait = {},
             waitForLoopBoundary = {},
         )
         val config = AutomationConfig(
             actions = listOf(
-                AutomationAction.IfBlock(thenWaitMs = 400L, waitAfterMs = 0L),
-                AutomationAction.Tap(waitAfterMs = 0L, jitterPx = 3),
+                AutomationAction.Tap(x = 100f, y = 10f, jitterPx = 0),
+                AutomationAction.JumpTo(targetNumber = 4),
+                AutomationAction.Tap(x = 200f, y = 10f, jitterPx = 0),
+                AutomationAction.Tap(x = 300f, y = 10f, jitterPx = 0),
             ),
             repeatMode = RepeatMode.COUNT,
             repeatCount = 1,
@@ -596,7 +605,7 @@ class AutomationRunnerTest {
         runner.start(config, ScreenBounds(1080, 2400))
         advanceUntilIdle()
 
-        assertTrue(waits.any { it in 370L..430L })
+        assertEquals(listOf("100", "300"), calls)
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 
@@ -624,7 +633,7 @@ class AutomationRunnerTest {
         )
         val config = AutomationConfig(
             actions = listOf(
-                AutomationAction.IfBlock(thenJumpTo = 99),
+                AutomationAction.JumpTo(targetNumber = 99),
                 AutomationAction.Tap(jitterPx = 3),
             ),
             repeatMode = RepeatMode.COUNT,

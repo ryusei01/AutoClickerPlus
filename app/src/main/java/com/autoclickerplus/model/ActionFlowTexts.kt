@@ -8,6 +8,7 @@ fun AutomationAction.flowTitle(): String = when (this) {
     is AutomationAction.IfBlock -> "IF"
     is AutomationAction.BreakLoop -> "ループ終了"
     is AutomationAction.Wait -> "待機"
+    is AutomationAction.JumpTo -> "番号へ"
 }
 
 fun AutomationAction.flowSummary(fromNumber: Int = 0): String = when (this) {
@@ -19,11 +20,12 @@ fun AutomationAction.flowSummary(fromNumber: Int = 0): String = when (this) {
     is AutomationAction.IfBlock -> {
         val cond = conditions.firstOrNull()?.summary() ?: "条件なし"
         val extra = if (conditions.size > 1) " ほか${conditions.size - 1}" else ""
-        "$operator $cond$extra  THEN ${thenActions.size}→${jumpTargetLabel(thenJumpTo, fromNumber)} ${thenWaitMs}ms±${thenWaitJitterMs} / " +
-            "ELSE ${elseActions.size}→${jumpTargetLabel(elseJumpTo, fromNumber)} ${elseWaitMs}ms±${elseWaitJitterMs}"
+        "$operator $cond$extra  THEN ${thenActions.size} / ELSE ${elseActions.size}"
     }
     is AutomationAction.BreakLoop -> "到達したら繰り返しを終了"
-    is AutomationAction.Wait -> "${formatWaitSeconds(durationMs)}秒待つ ±${waitJitterMs}ms"
+    is AutomationAction.Wait -> "${durationMs}ms待つ ±${waitJitterMs}ms"
+    is AutomationAction.JumpTo ->
+        "${jumpTargetLabel(targetNumber, fromNumber)}  → ${waitAfterMs}ms ±${waitJitterMs}"
 }
 
 fun AutomationCondition.summary(): String = when (this) {

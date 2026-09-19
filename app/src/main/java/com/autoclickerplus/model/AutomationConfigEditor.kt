@@ -282,6 +282,7 @@ fun AutomationAction.withRegeneratedIds(): AutomationAction = when (this) {
     )
     is AutomationAction.BreakLoop -> copy(id = java.util.UUID.randomUUID().toString())
     is AutomationAction.Wait -> copy(id = java.util.UUID.randomUUID().toString())
+    is AutomationAction.JumpTo -> copy(id = java.util.UUID.randomUUID().toString())
 }
 
 fun AutomationCondition.withRegeneratedId(): AutomationCondition = when (this) {

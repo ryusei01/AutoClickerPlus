@@ -45,12 +45,6 @@ sealed class AutomationAction {
         val operator: ConditionOperator = ConditionOperator.AND,
         val thenActions: List<AutomationAction> = emptyList(),
         val elseActions: List<AutomationAction> = emptyList(),
-        val thenJumpTo: Int? = null,
-        val elseJumpTo: Int? = null,
-        val thenWaitMs: Long = 0L,
-        val elseWaitMs: Long = 0L,
-        val thenWaitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
-        val elseWaitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val waitAfterMs: Long = 0L,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 3,
@@ -72,6 +66,16 @@ sealed class AutomationAction {
         val durationMs: Long = 1_000L,
         override val waitAfterMs: Long = 0L,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
+        override val jitterPx: Int = 3,
+    ) : AutomationAction()
+
+    @Serializable
+    @SerialName("jump_to")
+    data class JumpTo(
+        override val id: String = UUID.randomUUID().toString(),
+        val targetNumber: Int = 1,
+        override val waitAfterMs: Long = 0L,
+        override val waitJitterMs: Int = 0,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
 }
@@ -204,12 +208,6 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
             .map(AutomationCondition::normalized),
         thenActions = thenActions.map(AutomationAction::normalized),
         elseActions = elseActions.map(AutomationAction::normalized),
-        thenJumpTo = thenJumpTo.normalizedJump(),
-        elseJumpTo = elseJumpTo.normalizedJump(),
-        thenWaitMs = thenWaitMs.coerceAtLeast(0L),
-        elseWaitMs = elseWaitMs.coerceAtLeast(0L),
-        thenWaitJitterMs = thenWaitJitterMs.normalizedWaitJitter(),
-        elseWaitJitterMs = elseWaitJitterMs.normalizedWaitJitter(),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
         waitJitterMs = waitJitterMs.normalizedWaitJitter(),
         jitterPx = 3,
@@ -225,6 +223,12 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         waitJitterMs = waitJitterMs.normalizedWaitJitter(),
         jitterPx = 3,
     )
+    is AutomationAction.JumpTo -> copy(
+        targetNumber = targetNumber.coerceAtLeast(1),
+        waitAfterMs = waitAfterMs.coerceAtLeast(0L),
+        waitJitterMs = waitJitterMs.normalizedWaitJitter(),
+        jitterPx = 3,
+    )
 }
 
 const val MAX_WAIT_MS = 3_600_000L
@@ -236,26 +240,11 @@ fun Int.normalizedWaitJitter(): Int = coerceIn(0, MAX_WAIT_JITTER_MS)
 
 fun Int.normalizedPositionJitter(): Int = coerceIn(0, MAX_POSITION_JITTER_PX)
 
-fun formatWaitSeconds(durationMs: Long): String {
-    if (durationMs % 1_000L == 0L) return (durationMs / 1_000L).toString()
-    return (durationMs / 1_000.0).toString().trimEnd('0').trimEnd('.')
-}
-
-fun parseWaitSeconds(text: String): Long? {
-    val seconds = text.trim().toDoubleOrNull() ?: return null
-    return (seconds * 1_000.0).toLong().coerceIn(0L, MAX_WAIT_MS)
-}
-
-fun Int?.normalizedJump(): Int? = this?.takeIf { it >= 1 }
-
-fun jumpTargetLabel(target: Int?, fromNumber: Int = 0): String {
-    val number = target ?: return "次へ"
-    return when {
-        fromNumber <= 0 -> "${number}番へ"
-        number < fromNumber -> "${number}番へ戻る"
-        number > fromNumber -> "${number}番へ進む"
-        else -> "${number}番へ"
-    }
+fun jumpTargetLabel(targetNumber: Int, fromNumber: Int = 0): String = when {
+    fromNumber <= 0 -> "${targetNumber}番へ"
+    targetNumber < fromNumber -> "${targetNumber}番へ戻る"
+    targetNumber > fromNumber -> "${targetNumber}番へ進む"
+    else -> "${targetNumber}番へ"
 }
 
 fun AutomationConfig.normalized(): AutomationConfig = copy(

@@ -19,6 +19,7 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.HorizontalScrollView
 import android.widget.ScrollView
 import android.widget.TextView
 import com.autoclickerplus.R
@@ -33,9 +34,7 @@ import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
-import com.autoclickerplus.model.formatWaitSeconds
 import com.autoclickerplus.model.jumpTargetLabel
-import com.autoclickerplus.model.parseWaitSeconds
 import kotlin.math.roundToInt
 
 data class FloatingEditorCallbacks(
@@ -44,6 +43,7 @@ data class FloatingEditorCallbacks(
     val onAddIf: () -> Unit,
     val onAddBreak: () -> Unit,
     val onAddWait: () -> Unit,
+    val onAddJumpTo: () -> Unit,
     val onAddToBranch: (String, BranchSide, AutomationAction) -> Unit,
     val onReplace: (AutomationAction) -> Unit,
     val onAddCondition: (String, AutomationCondition) -> Unit,
@@ -213,6 +213,7 @@ class FloatingEditorOverlay(
         })
         addView(LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
+            addView(actionButton(R.drawable.ic_location, "番号へ", callbacks.onAddJumpTo), rowButtonParams())
             addView(actionButton(R.drawable.ic_break, "ループ終了", callbacks.onAddBreak), rowButtonParams())
         })
     }
@@ -259,6 +260,7 @@ class FloatingEditorOverlay(
         is AutomationAction.IfBlock -> ifEditor(path, index, siblingCount, action)
         is AutomationAction.BreakLoop -> breakEditor(path, index, siblingCount, action)
         is AutomationAction.Wait -> waitEditor(path, index, siblingCount, action)
+        is AutomationAction.JumpTo -> jumpEditor(path, index, siblingCount, action)
         else -> LinearLayout(service).apply {
             val expanded = action.id in expandedDetailIds
             val nodeColor = if (action is AutomationAction.Tap) {
@@ -350,17 +352,49 @@ class FloatingEditorOverlay(
         background = roundedBackground(0xFF3D4A5C.toInt(), dp(12).toFloat())
         addView(flowNodeHeader(path, action, expanded, index, siblingCount))
         if (expanded) {
-            addView(numberField(
-                "待機 秒",
-                formatWaitSeconds(action.durationMs),
-                decimal = true,
-            ) { value ->
-                parseWaitSeconds(value)?.let { ms ->
-                    callbacks.onReplace(action.copy(durationMs = ms))
+            addView(numberField("待機 ms", action.durationMs.toString()) { value ->
+                value.toLongOrNull()?.let { ms ->
+                    callbacks.onReplace(action.copy(durationMs = ms.coerceAtLeast(0L)))
                 }
             })
+            addView(numberField("揺らぎ ±ms", action.waitJitterMs.toString()) { value ->
+                value.toIntOrNull()?.let { callbacks.onReplace(action.withWaitJitter(it)) }
+            })
+        }
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { setMargins(0, dp(2), 0, dp(2)) }
+    }
+
+    private fun jumpEditor(
+        path: String,
+        index: Int,
+        siblingCount: Int,
+        action: AutomationAction.JumpTo,
+    ) = LinearLayout(service).apply {
+        val expanded = action.id in expandedDetailIds
+        val ownerNumber = path.takeWhile { it.isDigit() }.toIntOrNull() ?: 1
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        background = roundedBackground(0xFF4A3A62.toInt(), dp(12).toFloat())
+        addView(flowNodeHeader(path, action, expanded, index, siblingCount))
+        if (expanded) {
+            addView(label(jumpTargetLabel(action.targetNumber, ownerNumber)))
+            addView(numberField("移動先アクション番号", action.targetNumber.toString()) { value ->
+                value.toIntOrNull()?.takeIf { it >= 1 }?.let {
+                    callbacks.onReplace(action.copy(targetNumber = it))
+                }
+            })
+            addView(label("ルートの番号（1, 2, 3…）へ移動します"))
             addView(numberField(
-                "揺らぎ ±ms",
+                "次の動作までの待機時間 ms",
+                action.waitAfterMs.toString(),
+            ) { value ->
+                value.toLongOrNull()?.let { callbacks.onReplace(action.withWait(it)) }
+            })
+            addView(numberField(
+                "待機の揺らぎ ±ms",
                 action.waitJitterMs.toString(),
             ) { value ->
                 value.toIntOrNull()?.let { callbacks.onReplace(action.withWaitJitter(it)) }
@@ -516,10 +550,6 @@ class FloatingEditorOverlay(
         side: BranchSide,
     ) = LinearLayout(service).apply {
         val actions = if (side == BranchSide.THEN) block.thenActions else block.elseActions
-        val jumpTo = if (side == BranchSide.THEN) block.thenJumpTo else block.elseJumpTo
-        val waitMs = if (side == BranchSide.THEN) block.thenWaitMs else block.elseWaitMs
-        val waitJitterMs = if (side == BranchSide.THEN) block.thenWaitJitterMs else block.elseWaitJitterMs
-        val ownerNumber = pathPrefix.takeWhile { it.isDigit() }.toIntOrNull() ?: 1
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(6), 0, dp(6))
         addView(label("◆ $title"))
@@ -530,74 +560,30 @@ class FloatingEditorOverlay(
             if (index > 0) addView(flowArrow())
             addView(actionEditor("$pathPrefix${index + 1}", index, actions.size, action))
         }
-        addView(LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(smallButton("+タップ", true) {
-                callbacks.onAddToBranch(block.id, side, AutomationAction.Tap())
-            })
-            addView(smallButton("+スクロール", true) {
-                callbacks.onAddToBranch(block.id, side, AutomationAction.Swipe())
-            })
-            addView(smallButton("+IF", true) {
-                callbacks.onAddToBranch(block.id, side, AutomationAction.IfBlock())
-            })
-            addView(smallButton("+終了", true) {
-                callbacks.onAddToBranch(block.id, side, AutomationAction.BreakLoop())
-            })
-            addView(smallButton("+待機", true) {
-                callbacks.onAddToBranch(block.id, side, AutomationAction.Wait())
-            })
-        })
-        addView(flowArrow())
-        addView(label("→ ${jumpTargetLabel(jumpTo, ownerNumber)}"))
-        addView(LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(smallButton(if (jumpTo == null) "番号へ" else "次へ進む", true) {
-                val updated = if (side == BranchSide.THEN) {
-                    block.copy(thenJumpTo = if (jumpTo == null) ownerNumber else null)
-                } else {
-                    block.copy(elseJumpTo = if (jumpTo == null) ownerNumber else null)
-                }
-                callbacks.onReplace(updated)
+        addView(HorizontalScrollView(service).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(LinearLayout(service).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(smallButton("+タップ", true) {
+                    callbacks.onAddToBranch(block.id, side, AutomationAction.Tap())
+                })
+                addView(smallButton("+スクロール", true) {
+                    callbacks.onAddToBranch(block.id, side, AutomationAction.Swipe())
+                })
+                addView(smallButton("+IF", true) {
+                    callbacks.onAddToBranch(block.id, side, AutomationAction.IfBlock())
+                })
+                addView(smallButton("+終了", true) {
+                    callbacks.onAddToBranch(block.id, side, AutomationAction.BreakLoop())
+                })
+                addView(smallButton("+待機", true) {
+                    callbacks.onAddToBranch(block.id, side, AutomationAction.Wait())
+                })
+                addView(smallButton("+番号へ", true) {
+                    callbacks.onAddToBranch(block.id, side, AutomationAction.JumpTo())
+                })
             })
         })
-        if (jumpTo != null) {
-            addView(numberField("アクション番号", jumpTo.toString()) { value ->
-                val number = value.toIntOrNull()?.takeIf { it >= 1 }
-                callbacks.onReplace(
-                    if (side == BranchSide.THEN) {
-                        block.copy(thenJumpTo = number)
-                    } else {
-                        block.copy(elseJumpTo = number)
-                    },
-                )
-            })
-        }
-        addView(numberField("このあと待機 ms", waitMs.toString()) { value ->
-            value.toLongOrNull()?.let { wait ->
-                callbacks.onReplace(
-                    if (side == BranchSide.THEN) {
-                        block.copy(thenWaitMs = wait.coerceAtLeast(0L))
-                    } else {
-                        block.copy(elseWaitMs = wait.coerceAtLeast(0L))
-                    },
-                )
-            }
-        })
-        addView(numberField("揺らぎ ±ms", waitJitterMs.toString()) { value ->
-            value.toIntOrNull()?.let { jitter ->
-                val normalized = jitter.coerceIn(0, MAX_WAIT_JITTER_MS)
-                callbacks.onReplace(
-                    if (side == BranchSide.THEN) {
-                        block.copy(thenWaitJitterMs = normalized)
-                    } else {
-                        block.copy(elseWaitJitterMs = normalized)
-                    },
-                )
-            }
-        })
-        addView(label("今より小さい番号は戻り、大きい番号は先へ進みます"))
     }
 
     private fun flowNodeHeader(
@@ -778,7 +764,8 @@ class FloatingEditorOverlay(
                 "(${action.endX.roundToInt()}, ${action.endY.roundToInt()})"
         is AutomationAction.IfBlock -> "条件分岐"
         is AutomationAction.BreakLoop -> "ループ終了"
-        is AutomationAction.Wait -> "${formatWaitSeconds(action.durationMs)}秒"
+        is AutomationAction.Wait -> "${action.durationMs}ms"
+        is AutomationAction.JumpTo -> jumpTargetLabel(action.targetNumber)
     }
 
     private fun makeDraggable(
@@ -820,6 +807,7 @@ class FloatingEditorOverlay(
         is AutomationAction.IfBlock -> copy(waitAfterMs = value.coerceAtLeast(0L))
         is AutomationAction.BreakLoop -> this
         is AutomationAction.Wait -> this
+        is AutomationAction.JumpTo -> copy(waitAfterMs = value.coerceAtLeast(0L))
     }
 
     private fun AutomationAction.withWaitJitter(value: Int): AutomationAction = when (this) {
@@ -828,6 +816,7 @@ class FloatingEditorOverlay(
         is AutomationAction.IfBlock -> copy(waitJitterMs = value.coerceIn(0, MAX_WAIT_JITTER_MS))
         is AutomationAction.BreakLoop -> this
         is AutomationAction.Wait -> copy(waitJitterMs = value.coerceIn(0, MAX_WAIT_JITTER_MS))
+        is AutomationAction.JumpTo -> copy(waitJitterMs = value.coerceIn(0, MAX_WAIT_JITTER_MS))
     }
 
     private fun AutomationAction.withJitter(value: Int): AutomationAction = when (this) {
@@ -836,6 +825,7 @@ class FloatingEditorOverlay(
         is AutomationAction.IfBlock -> this
         is AutomationAction.BreakLoop -> this
         is AutomationAction.Wait -> this
+        is AutomationAction.JumpTo -> this
     }
 
     private fun TextMatchMode.toggled() =

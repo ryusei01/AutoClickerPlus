@@ -101,35 +101,19 @@ class AutomationConfigEditorTest {
     }
 
     @Test
-    fun ifBranchJumpTargetsAreNormalized() {
-        val block = AutomationAction.IfBlock(
-            id = "if",
-            thenJumpTo = 0,
-            elseJumpTo = -3,
-        )
-        val config = AutomationConfigEditor.replace(
-            AutomationConfig(actions = listOf(block)),
-            block.copy(thenJumpTo = 2, elseJumpTo = 0),
-        )
-        val saved = config.actions.single() as AutomationAction.IfBlock
-        assertEquals(2, saved.thenJumpTo)
-        assertNull(saved.elseJumpTo)
-        val waits = AutomationConfigEditor.replace(
-            config,
-            saved.copy(thenWaitMs = -8, elseWaitMs = 250),
-        ).actions.single() as AutomationAction.IfBlock
-        assertEquals(0L, waits.thenWaitMs)
-        assertEquals(250L, waits.elseWaitMs)
+    fun jumpToAndWaitActionsAreNormalized() {
+        val jump = AutomationConfigEditor.add(
+            AutomationConfig(),
+            AutomationAction.JumpTo(targetNumber = 0),
+        ).actions.single() as AutomationAction.JumpTo
+        assertEquals(1, jump.targetNumber)
         assertEquals("2番へ進む", jumpTargetLabel(2, 1))
-        assertEquals("1.5", formatWaitSeconds(1_500L))
-        assertEquals(1_500L, parseWaitSeconds("1.5"))
+        assertEquals("1番へ戻る", jumpTargetLabel(1, 3))
         val wait = AutomationConfigEditor.add(
             AutomationConfig(),
             AutomationAction.Wait(durationMs = 9_999_999L),
         ).actions.single() as AutomationAction.Wait
         assertEquals(MAX_WAIT_MS, wait.durationMs)
-        assertEquals("1番へ戻る", jumpTargetLabel(1, 3))
-        assertEquals("次へ", jumpTargetLabel(null, 2))
     }
 
     @Test

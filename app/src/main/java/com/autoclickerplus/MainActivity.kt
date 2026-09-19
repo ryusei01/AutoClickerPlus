@@ -64,9 +64,7 @@ import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
-import com.autoclickerplus.model.formatWaitSeconds
 import com.autoclickerplus.model.jumpTargetLabel
-import com.autoclickerplus.model.parseWaitSeconds
 import com.autoclickerplus.model.summary
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
@@ -266,6 +264,9 @@ private fun AutomationScreen(
             ) {
                 Button(onClick = viewModel::addWait, modifier = Modifier.weight(1f)) {
                     Text("待機")
+                }
+                Button(onClick = viewModel::addJumpTo, modifier = Modifier.weight(1f)) {
+                    Text("番号へ")
                 }
                 Button(onClick = viewModel::addBreak, modifier = Modifier.weight(1f)) {
                     Text("ループ終了")
@@ -612,6 +613,17 @@ private fun ActionTreeCard(
             onMoveUp = { viewModel.move(action.id, -1) },
             onMoveDown = { viewModel.move(action.id, 1) },
         )
+        is AutomationAction.JumpTo -> JumpToCard(
+            path = path,
+            action = action,
+            rootNumber = rootNumber,
+            canMoveUp = canMoveUp,
+            canMoveDown = canMoveDown,
+            onReplace = viewModel::replace,
+            onRemove = { viewModel.remove(action.id) },
+            onMoveUp = { viewModel.move(action.id, -1) },
+            onMoveDown = { viewModel.move(action.id, 1) },
+        )
         is AutomationAction.BreakLoop -> BreakLoopCard(
             path = path,
             action = action,
@@ -712,16 +724,10 @@ private fun IfBlockCard(
                     title = "THEN",
                     pathPrefix = "$path-T",
                     actions = block.thenActions,
-                    jumpTo = block.thenJumpTo,
-                    waitMs = block.thenWaitMs,
-                    waitJitterMs = block.thenWaitJitterMs,
                     rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.THEN,
                     viewModel = viewModel,
-                    onJumpToChange = { viewModel.replace(block.copy(thenJumpTo = it)) },
-                    onWaitChange = { viewModel.replace(block.copy(thenWaitMs = it)) },
-                    onWaitJitterChange = { viewModel.replace(block.copy(thenWaitJitterMs = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -729,16 +735,10 @@ private fun IfBlockCard(
                     title = "ELSE",
                     pathPrefix = "$path-E",
                     actions = block.elseActions,
-                    jumpTo = block.elseJumpTo,
-                    waitMs = block.elseWaitMs,
-                    waitJitterMs = block.elseWaitJitterMs,
                     rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.ELSE,
                     viewModel = viewModel,
-                    onJumpToChange = { viewModel.replace(block.copy(elseJumpTo = it)) },
-                    onWaitChange = { viewModel.replace(block.copy(elseWaitMs = it)) },
-                    onWaitJitterChange = { viewModel.replace(block.copy(elseWaitJitterMs = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -850,16 +850,10 @@ private fun BranchEditor(
     title: String,
     pathPrefix: String,
     actions: List<AutomationAction>,
-    jumpTo: Int?,
-    waitMs: Long,
-    waitJitterMs: Int,
     rootNumber: Int,
     blockId: String,
     side: BranchSide,
     viewModel: AutomationViewModel,
-    onJumpToChange: (Int?) -> Unit,
-    onWaitChange: (Long) -> Unit,
-    onWaitJitterChange: (Int) -> Unit,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
@@ -895,7 +889,12 @@ private fun BranchEditor(
                 onPickColor = onPickColor,
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             TextButton(onClick = {
                 viewModel.addToBranch(blockId, side, AutomationAction.Tap())
             }) { Text("+タップ") }
@@ -911,44 +910,10 @@ private fun BranchEditor(
             TextButton(onClick = {
                 viewModel.addToBranch(blockId, side, AutomationAction.Wait())
             }) { Text("+待機") }
+            TextButton(onClick = {
+                viewModel.addToBranch(blockId, side, AutomationAction.JumpTo())
+            }) { Text("+番号へ") }
         }
-        FlowArrow()
-        Text(
-            "→ ${jumpTargetLabel(jumpTo, rootNumber)}",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(
-                onClick = {
-                    onJumpToChange(if (jumpTo == null) rootNumber else null)
-                },
-            ) {
-                Text(if (jumpTo == null) "番号へ" else "次へ進む")
-            }
-            if (jumpTo != null) {
-                CommitNumberField(
-                    value = jumpTo.toString(),
-                    label = "アクション番号",
-                    modifier = Modifier.weight(1f),
-                    onCommit = { value ->
-                        onJumpToChange(value.toIntOrNull()?.takeIf { it >= 1 })
-                    },
-                )
-            }
-        }
-        WaitWithJitterFields(
-            waitMs = waitMs,
-            jitterMs = waitJitterMs,
-            waitLabel = "このあと待機 ms",
-            onWait = onWaitChange,
-            onJitter = onWaitJitterChange,
-        )
-        Text(
-            "今より小さい番号は戻り、大きい番号は先へ進みます",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -1000,15 +965,14 @@ private fun WaitCard(
             )
             if (expanded) {
                 CommitNumberField(
-                    value = formatWaitSeconds(action.durationMs),
-                    label = "待機 秒（小数可）",
+                    value = action.durationMs.toString(),
+                    label = "待機 ms",
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 6.dp),
-                    decimal = true,
                     onCommit = { value ->
-                        parseWaitSeconds(value)?.let { ms ->
-                            onReplace(action.copy(durationMs = ms))
+                        value.toLongOrNull()?.let { ms ->
+                            onReplace(action.copy(durationMs = ms.coerceAtLeast(0L)))
                         }
                     },
                 )
@@ -1021,6 +985,65 @@ private fun WaitCard(
                             onReplace(action.copy(waitJitterMs = it.coerceIn(0, MAX_WAIT_JITTER_MS)))
                         }
                     },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun JumpToCard(
+    path: String,
+    action: AutomationAction.JumpTo,
+    rootNumber: Int,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onReplace: (AutomationAction) -> Unit,
+    onRemove: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    var expanded by remember(action.id) { mutableStateOf(true) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            FlowNodeHeader(
+                path = path,
+                title = action.flowTitle(),
+                summary = action.flowSummary(rootNumber),
+                expanded = expanded,
+                accent = Color(0xFF6A4C93),
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onToggle = { expanded = !expanded },
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+                onRemove = onRemove,
+            )
+            if (expanded) {
+                CommitNumberField(
+                    value = action.targetNumber.toString(),
+                    label = "移動先アクション番号",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    onCommit = { value ->
+                        value.toIntOrNull()?.takeIf { it >= 1 }?.let {
+                            onReplace(action.copy(targetNumber = it))
+                        }
+                    },
+                )
+                Text(
+                    "ルートの番号（1, 2, 3…）へ移動します",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                WaitWithJitterFields(
+                    waitMs = action.waitAfterMs,
+                    jitterMs = action.waitJitterMs,
+                    waitLabel = "次の動作までの待機時間 ms",
+                    onWait = { onReplace(action.withWait(it)) },
+                    onJitter = { onReplace(action.withWaitJitter(it)) },
                 )
             }
         }
@@ -1170,6 +1193,7 @@ private fun AutomationAction.withWait(waitMs: Long): AutomationAction = when (th
     is AutomationAction.IfBlock -> copy(waitAfterMs = waitMs.coerceAtLeast(0L))
     is AutomationAction.BreakLoop -> this
     is AutomationAction.Wait -> this
+    is AutomationAction.JumpTo -> copy(waitAfterMs = waitMs.coerceAtLeast(0L))
 }
 
 private fun AutomationAction.withWaitJitter(jitterMs: Int): AutomationAction = when (this) {
@@ -1178,6 +1202,7 @@ private fun AutomationAction.withWaitJitter(jitterMs: Int): AutomationAction = w
     is AutomationAction.IfBlock -> copy(waitJitterMs = jitterMs.coerceIn(0, MAX_WAIT_JITTER_MS))
     is AutomationAction.BreakLoop -> this
     is AutomationAction.Wait -> copy(waitJitterMs = jitterMs.coerceIn(0, MAX_WAIT_JITTER_MS))
+    is AutomationAction.JumpTo -> copy(waitJitterMs = jitterMs.coerceIn(0, MAX_WAIT_JITTER_MS))
 }
 
 private fun AutomationAction.withJitter(jitterPx: Int): AutomationAction = when (this) {
@@ -1186,4 +1211,5 @@ private fun AutomationAction.withJitter(jitterPx: Int): AutomationAction = when 
     is AutomationAction.IfBlock -> this
     is AutomationAction.BreakLoop -> this
     is AutomationAction.Wait -> this
+    is AutomationAction.JumpTo -> this
 }

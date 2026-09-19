@@ -29,6 +29,7 @@ data class OverlayCallbacks(
     val onAddIf: () -> Unit,
     val onAddBreak: () -> Unit,
     val onAddWait: () -> Unit,
+    val onAddJumpTo: () -> Unit,
     val onAddToBranch: (String, BranchSide, AutomationAction) -> Unit,
     val onReplace: (AutomationAction) -> Unit,
     val onAddCondition: (String, AutomationCondition) -> Unit,
@@ -66,6 +67,7 @@ class OverlayController(
                 onAddIf = callbacks.onAddIf,
                 onAddBreak = callbacks.onAddBreak,
                 onAddWait = callbacks.onAddWait,
+                onAddJumpTo = callbacks.onAddJumpTo,
                 onAddToBranch = callbacks.onAddToBranch,
                 onReplace = callbacks.onReplace,
                 onAddCondition = callbacks.onAddCondition,
@@ -163,7 +165,8 @@ class OverlayController(
         if (
             action is AutomationAction.IfBlock ||
             action is AutomationAction.BreakLoop ||
-            action is AutomationAction.Wait
+            action is AutomationAction.Wait ||
+            action is AutomationAction.JumpTo
         ) return
         val sequence = AutomationConfigEditor.sequencePath(config, actionId) ?: "?"
         removeControls()

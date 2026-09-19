@@ -44,6 +44,8 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
 
     fun addWait() = update { AutomationConfigEditor.add(it, AutomationAction.Wait()) }
 
+    fun addJumpTo() = update { AutomationConfigEditor.add(it, AutomationAction.JumpTo()) }
+
     fun addToBranch(ifBlockId: String, side: BranchSide, action: AutomationAction) =
         update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, action) }
 
