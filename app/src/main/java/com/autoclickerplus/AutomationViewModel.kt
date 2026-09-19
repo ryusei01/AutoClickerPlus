@@ -40,6 +40,8 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
 
     fun addIf() = update { AutomationConfigEditor.add(it, AutomationAction.IfBlock()) }
 
+    fun addBreak() = update { AutomationConfigEditor.add(it, AutomationAction.BreakLoop()) }
+
     fun addToBranch(ifBlockId: String, side: BranchSide, action: AutomationAction) =
         update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, action) }
 

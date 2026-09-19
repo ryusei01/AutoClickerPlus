@@ -34,6 +34,7 @@ data class FloatingEditorCallbacks(
     val onAddTap: () -> Unit,
     val onAddSwipe: () -> Unit,
     val onAddIf: () -> Unit,
+    val onAddBreak: () -> Unit,
     val onAddToBranch: (String, BranchSide, AutomationAction) -> Unit,
     val onReplace: (AutomationAction) -> Unit,
     val onAddCondition: (String, AutomationCondition) -> Unit,
@@ -166,14 +167,21 @@ class FloatingEditorOverlay(
     }
 
     private fun addButtons() = LinearLayout(service).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
-        addView(actionButton(R.drawable.ic_tap, "タップ追加", callbacks.onAddTap))
-        addView(actionButton(R.drawable.ic_swipe, "スクロール追加", callbacks.onAddSwipe))
-        addView(Button(service).apply {
-            text = "IF追加"
-            setOnClickListener { callbacks.onAddIf() }
+        orientation = LinearLayout.VERTICAL
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(actionButton(R.drawable.ic_tap, "タップ", callbacks.onAddTap), rowButtonParams())
+            addView(actionButton(R.drawable.ic_swipe, "スクロール", callbacks.onAddSwipe), rowButtonParams())
         })
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(actionButton(R.drawable.ic_edit, "IF", callbacks.onAddIf), rowButtonParams())
+            addView(actionButton(R.drawable.ic_break, "ループ終了", callbacks.onAddBreak), rowButtonParams())
+        })
+    }
+
+    private fun rowButtonParams() = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+        setMargins(dp(2), dp(2), dp(2), dp(2))
     }
 
     private fun repeatControls() = LinearLayout(service).apply {
@@ -210,10 +218,10 @@ class FloatingEditorOverlay(
         index: Int,
         siblingCount: Int,
         action: AutomationAction,
-    ): View = if (action is AutomationAction.IfBlock) {
-        ifEditor(path, index, siblingCount, action)
-    } else {
-        LinearLayout(service).apply {
+    ): View = when (action) {
+        is AutomationAction.IfBlock -> ifEditor(path, index, siblingCount, action)
+        is AutomationAction.BreakLoop -> breakEditor(path, index, siblingCount, action)
+        else -> LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = roundedBackground(0xFF403D48.toInt(), dp(12).toFloat())
@@ -272,6 +280,32 @@ class FloatingEditorOverlay(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { setMargins(0, dp(4), 0, dp(6)) }
         }
+    }
+
+    private fun breakEditor(
+        path: String,
+        index: Int,
+        siblingCount: Int,
+        action: AutomationAction.BreakLoop,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        background = roundedBackground(0xFF5C4033.toInt(), dp(12).toFloat())
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("$path. ループ終了"), LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(smallButton("↑", index > 0) { callbacks.onMove(action.id, -1) })
+            addView(smallButton("↓", index < siblingCount - 1) {
+                callbacks.onMove(action.id, 1)
+            })
+            addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
+        })
+        addView(label("この操作に到達すると繰り返しを終了します"))
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { setMargins(0, dp(4), 0, dp(6)) }
     }
 
     private fun ifEditor(
@@ -442,6 +476,9 @@ class FloatingEditorOverlay(
             addView(smallButton("+IF", true) {
                 callbacks.onAddToBranch(blockId, side, AutomationAction.IfBlock())
             })
+            addView(smallButton("+終了", true) {
+                callbacks.onAddToBranch(blockId, side, AutomationAction.BreakLoop())
+            })
         })
     }
 
@@ -562,6 +599,7 @@ class FloatingEditorOverlay(
             "(${action.startX.roundToInt()}, ${action.startY.roundToInt()}) → " +
                 "(${action.endX.roundToInt()}, ${action.endY.roundToInt()})"
         is AutomationAction.IfBlock -> "条件分岐"
+        is AutomationAction.BreakLoop -> "ループ終了"
     }
 
     private fun makeDraggable(
@@ -601,12 +639,14 @@ class FloatingEditorOverlay(
         is AutomationAction.Tap -> copy(waitAfterMs = value.coerceAtLeast(0L))
         is AutomationAction.Swipe -> copy(waitAfterMs = value.coerceAtLeast(0L))
         is AutomationAction.IfBlock -> copy(waitAfterMs = value.coerceAtLeast(0L))
+        is AutomationAction.BreakLoop -> this
     }
 
     private fun AutomationAction.withJitter(value: Int): AutomationAction = when (this) {
         is AutomationAction.Tap -> copy(jitterPx = value.coerceIn(3, 10))
         is AutomationAction.Swipe -> copy(jitterPx = value.coerceIn(3, 10))
         is AutomationAction.IfBlock -> this
+        is AutomationAction.BreakLoop -> this
     }
 
     private fun TextMatchMode.toggled() =

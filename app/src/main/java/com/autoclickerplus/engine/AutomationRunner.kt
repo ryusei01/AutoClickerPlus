@@ -134,6 +134,8 @@ class AutomationRunner(
                 mutableState.value = RunnerState.FAILED
             } catch (_: ConditionEvaluationException) {
                 mutableState.value = RunnerState.FAILED
+            } catch (_: LoopBreakException) {
+                mutableState.value = RunnerState.IDLE
             }
         }
         return true
@@ -150,7 +152,11 @@ class AutomationRunner(
         val totalLoops = if (config.repeatMode == RepeatMode.INFINITE) Int.MAX_VALUE else config.repeatCount
         var loop = 0
         while (loop < totalLoops) {
-            executeActions(config.actions, bounds)
+            try {
+                executeActions(config.actions, bounds)
+            } catch (_: LoopBreakException) {
+                return
+            }
             loop++
             if (loop < totalLoops) {
                 waitForLoopBoundary()
@@ -188,12 +194,14 @@ class AutomationRunner(
                         bounds,
                     )
                 }
+                is AutomationAction.BreakLoop -> throw LoopBreakException()
             }
             wait(randomizer.waitMs(action.waitAfterMs))
         }
     }
 
     private class GestureFailedException : RuntimeException()
+    private class LoopBreakException : RuntimeException()
 
     private companion object {
         const val LOOP_BOUNDARY_MS = 16L

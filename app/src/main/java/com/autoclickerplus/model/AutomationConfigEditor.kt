@@ -280,6 +280,7 @@ fun AutomationAction.withRegeneratedIds(): AutomationAction = when (this) {
         thenActions = thenActions.map(AutomationAction::withRegeneratedIds),
         elseActions = elseActions.map(AutomationAction::withRegeneratedIds),
     )
+    is AutomationAction.BreakLoop -> copy(id = java.util.UUID.randomUUID().toString())
 }
 
 fun AutomationCondition.withRegeneratedId(): AutomationCondition = when (this) {

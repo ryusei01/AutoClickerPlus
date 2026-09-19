@@ -219,13 +219,16 @@ private fun AutomationScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Button(onClick = viewModel::addTap, modifier = Modifier.weight(1f)) {
-                    Text("タップを追加")
+                    Text("タップ")
                 }
                 Button(onClick = viewModel::addSwipe, modifier = Modifier.weight(1f)) {
-                    Text("スクロールを追加")
+                    Text("スクロール")
                 }
                 Button(onClick = viewModel::addIf, modifier = Modifier.weight(1f)) {
-                    Text("IFを追加")
+                    Text("IF")
+                }
+                Button(onClick = viewModel::addBreak, modifier = Modifier.weight(1f)) {
+                    Text("ループ終了")
                 }
             }
         }
@@ -379,6 +382,15 @@ private fun ActionTreeCard(
             onMoveUp = { viewModel.move(action.id, -1) },
             onMoveDown = { viewModel.move(action.id, 1) },
             onPickCoordinates = { onPickCoordinates(action.id) },
+        )
+        is AutomationAction.BreakLoop -> BreakLoopCard(
+            path = path,
+            action = action,
+            canMoveUp = canMoveUp,
+            canMoveDown = canMoveDown,
+            onRemove = { viewModel.remove(action.id) },
+            onMoveUp = { viewModel.move(action.id, -1) },
+            onMoveDown = { viewModel.move(action.id, 1) },
         )
         is AutomationAction.IfBlock -> IfBlockCard(
             path = path,
@@ -632,6 +644,9 @@ private fun BranchEditor(
             TextButton(onClick = {
                 viewModel.addToBranch(blockId, side, AutomationAction.IfBlock())
             }) { Text("+IF") }
+            TextButton(onClick = {
+                viewModel.addToBranch(blockId, side, AutomationAction.BreakLoop())
+            }) { Text("+終了") }
         }
     }
 }
@@ -654,6 +669,33 @@ private val Boolean?.expectedLabel: String
         true -> "true"
         false -> "false"
     }
+
+@Composable
+private fun BreakLoopCard(
+    path: String,
+    action: AutomationAction.BreakLoop,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onRemove: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "$path. ループ終了",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("↑") }
+                TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("↓") }
+                TextButton(onClick = onRemove) { Text("削除") }
+            }
+            Text("この操作に到達すると繰り返しを終了します")
+        }
+    }
+}
 
 @Composable
 private fun ActionCard(
@@ -687,6 +729,7 @@ private fun ActionCard(
                     "開始: (${action.startX.roundToInt()}, ${action.startY.roundToInt()}) → " +
                         "終了: (${action.endX.roundToInt()}, ${action.endY.roundToInt()})"
                 is AutomationAction.IfBlock -> ""
+                is AutomationAction.BreakLoop -> ""
             }
             Text(coordinateText)
             OutlinedButton(onClick = onPickCoordinates) { Text("画面上で位置を指定") }
@@ -747,10 +790,12 @@ private fun AutomationAction.withWait(waitMs: Long): AutomationAction = when (th
     is AutomationAction.Tap -> copy(waitAfterMs = waitMs.coerceAtLeast(0L))
     is AutomationAction.Swipe -> copy(waitAfterMs = waitMs.coerceAtLeast(0L))
     is AutomationAction.IfBlock -> copy(waitAfterMs = waitMs.coerceAtLeast(0L))
+    is AutomationAction.BreakLoop -> this
 }
 
 private fun AutomationAction.withJitter(jitterPx: Int): AutomationAction = when (this) {
     is AutomationAction.Tap -> copy(jitterPx = jitterPx.coerceIn(3, 10))
     is AutomationAction.Swipe -> copy(jitterPx = jitterPx.coerceIn(3, 10))
     is AutomationAction.IfBlock -> this
+    is AutomationAction.BreakLoop -> this
 }

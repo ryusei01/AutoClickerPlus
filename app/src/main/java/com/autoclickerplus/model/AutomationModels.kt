@@ -45,6 +45,14 @@ sealed class AutomationAction {
         override val waitAfterMs: Long = 0L,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
+
+    @Serializable
+    @SerialName("break_loop")
+    data class BreakLoop(
+        override val id: String = UUID.randomUUID().toString(),
+        override val waitAfterMs: Long = 0L,
+        override val jitterPx: Int = 3,
+    ) : AutomationAction()
 }
 
 @Serializable
@@ -174,6 +182,10 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         thenActions = thenActions.map(AutomationAction::normalized),
         elseActions = elseActions.map(AutomationAction::normalized),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
+        jitterPx = 3,
+    )
+    is AutomationAction.BreakLoop -> copy(
+        waitAfterMs = 0L,
         jitterPx = 3,
     )
 }

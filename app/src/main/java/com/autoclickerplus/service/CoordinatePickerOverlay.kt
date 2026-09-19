@@ -61,7 +61,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                 )
                 showSwipeLine()
             }
-            is AutomationAction.IfBlock -> return
+            is AutomationAction.IfBlock, is AutomationAction.BreakLoop -> return
         }
         showControlBar(
             title = service.getString(R.string.picker_title, sequenceNumber),
@@ -298,7 +298,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                 endX = markerWindows[1].centerX,
                 endY = markerWindows[1].centerY,
             )
-            is AutomationAction.IfBlock -> null
+            is AutomationAction.IfBlock, is AutomationAction.BreakLoop -> null
         }
     }
 

@@ -392,6 +392,47 @@ class AutomationRunnerTest {
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 
+    @Test
+    fun breakLoopStopsFurtherRepeatsAndRemainingActions() = runTest {
+        val calls = mutableListOf<String>()
+        val executor = object : GestureExecutor {
+            override suspend fun tap(point: GesturePoint): Boolean {
+                calls += "tap"
+                return true
+            }
+
+            override suspend fun swipe(
+                start: GesturePoint,
+                end: GesturePoint,
+                durationMs: Long,
+                stopAtEnd: Boolean,
+            ) = true
+        }
+        val runner = AutomationRunner(
+            scope = this,
+            executor = executor,
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            wait = {},
+            waitForLoopBoundary = { calls += "boundary" },
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(),
+                AutomationAction.IfBlock(
+                    thenActions = listOf(AutomationAction.BreakLoop()),
+                ),
+                AutomationAction.Tap(),
+            ),
+            repeatMode = RepeatMode.INFINITE,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("tap"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
     private fun recordingExecutor(calls: MutableList<String>) = object : GestureExecutor {
         override suspend fun tap(point: GesturePoint): Boolean {
             calls += if (point.x < 50f) "then" else "else"

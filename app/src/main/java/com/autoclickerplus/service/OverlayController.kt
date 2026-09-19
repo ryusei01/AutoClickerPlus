@@ -27,6 +27,7 @@ data class OverlayCallbacks(
     val onAddTap: () -> Unit,
     val onAddSwipe: () -> Unit,
     val onAddIf: () -> Unit,
+    val onAddBreak: () -> Unit,
     val onAddToBranch: (String, BranchSide, AutomationAction) -> Unit,
     val onReplace: (AutomationAction) -> Unit,
     val onAddCondition: (String, AutomationCondition) -> Unit,
@@ -62,6 +63,7 @@ class OverlayController(
                 onAddTap = callbacks.onAddTap,
                 onAddSwipe = callbacks.onAddSwipe,
                 onAddIf = callbacks.onAddIf,
+                onAddBreak = callbacks.onAddBreak,
                 onAddToBranch = callbacks.onAddToBranch,
                 onReplace = callbacks.onReplace,
                 onAddCondition = callbacks.onAddCondition,
@@ -113,6 +115,7 @@ class OverlayController(
         actions.addView(iconButton(R.drawable.ic_stop, "停止", callbacks.onStop))
         actions.addView(iconButton(R.drawable.ic_tap, "タップを追加", callbacks.onAddTap))
         actions.addView(iconButton(R.drawable.ic_swipe, "スクロールを追加", callbacks.onAddSwipe))
+        actions.addView(iconButton(R.drawable.ic_break, "ループ終了を追加", callbacks.onAddBreak))
         actions.addView(iconButton(R.drawable.ic_edit, "アクションを編集") {
             removeControls()
             editor.show(config)
@@ -154,7 +157,7 @@ class OverlayController(
 
     fun showPicker(actionId: String, removeOnCancel: Boolean = false) {
         val action = AutomationConfigEditor.findAction(config, actionId) ?: return
-        if (action is AutomationAction.IfBlock) return
+        if (action is AutomationAction.IfBlock || action is AutomationAction.BreakLoop) return
         val sequence = AutomationConfigEditor.sequencePath(config, actionId) ?: "?"
         removeControls()
         editor.hide()
