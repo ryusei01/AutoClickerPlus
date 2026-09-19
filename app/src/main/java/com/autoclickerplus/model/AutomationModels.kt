@@ -32,6 +32,7 @@ sealed class AutomationAction {
         val endY: Float = 700f,
         val durationMs: Long = 300L,
         val stopAtEnd: Boolean = false,
+        val fullScroll: Boolean = false,
         override val waitAfterMs: Long = 300L,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = DEFAULT_POSITION_JITTER_PX,

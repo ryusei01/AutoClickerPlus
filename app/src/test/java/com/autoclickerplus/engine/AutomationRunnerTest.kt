@@ -114,6 +114,54 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun fullScrollUsesFlingInsteadOfHeldSwipe() = runTest {
+        val calls = mutableListOf<String>()
+        val executor = object : GestureExecutor {
+            override suspend fun tap(point: GesturePoint): Boolean = true
+
+            override suspend fun swipe(
+                start: GesturePoint,
+                end: GesturePoint,
+                durationMs: Long,
+                stopAtEnd: Boolean,
+            ): Boolean {
+                calls += "swipe"
+                return true
+            }
+
+            override suspend fun fling(start: GesturePoint, end: GesturePoint): Boolean {
+                calls += "fling"
+                return true
+            }
+        }
+        val runner = AutomationRunner(
+            scope = this,
+            executor = executor,
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Swipe(
+                    durationMs = 300L,
+                    stopAtEnd = true,
+                    fullScroll = true,
+                    waitAfterMs = 0L,
+                    waitJitterMs = 0,
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("fling"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun failedGestureStopsRemainingActions() = runTest {
         var callCount = 0
         val executor = object : GestureExecutor {

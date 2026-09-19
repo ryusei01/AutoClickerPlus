@@ -32,6 +32,9 @@ interface GestureExecutor {
         durationMs: Long,
         stopAtEnd: Boolean = true,
     ): Boolean
+
+    suspend fun fling(start: GesturePoint, end: GesturePoint): Boolean =
+        swipe(start, end, FlingGesture.DASH_MS, false)
 }
 
 fun interface ConditionEvaluator {
@@ -264,12 +267,20 @@ class AutomationRunner(
             is AutomationAction.Swipe -> {
                 val (start, end) = randomizer.swipePoints(action, bounds)
                 val startedAt = nowMs()
-                if (!executor.swipe(start, end, action.durationMs, action.stopAtEnd)) {
-                    throw GestureFailedException()
+                val expectedMs: Long
+                if (action.fullScroll) {
+                    if (!executor.fling(start, end)) {
+                        throw GestureFailedException()
+                    }
+                    expectedMs = FlingGesture.TOTAL_MS
+                } else {
+                    if (!executor.swipe(start, end, action.durationMs, action.stopAtEnd)) {
+                        throw GestureFailedException()
+                    }
+                    expectedMs = action.durationMs +
+                        if (action.stopAtEnd) SWIPE_HOLD_MS else 0L
                 }
                 val elapsed = (nowMs() - startedAt).coerceAtLeast(0L)
-                val expectedMs = action.durationMs +
-                    if (action.stopAtEnd) SWIPE_HOLD_MS else 0L
                 val remainingStroke = (expectedMs - elapsed).coerceAtLeast(0L)
                 wait(remainingStroke + SWIPE_SETTLE_MS)
             }

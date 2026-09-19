@@ -305,11 +305,20 @@ class FloatingEditorOverlay(
                             callbacks.onReplace(action.copy(durationMs = it.coerceIn(100L, 2_000L)))
                         }
                     })
-                    addView(smallButton(
-                        if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF",
-                        true,
-                    ) {
-                        callbacks.onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                    addView(LinearLayout(service).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        addView(smallButton(
+                            if (action.fullScroll) "すばやくスワイプ: ON" else "すばやくスワイプ: OFF",
+                            true,
+                        ) {
+                            callbacks.onReplace(action.copy(fullScroll = !action.fullScroll))
+                        })
+                        addView(smallButton(
+                            if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF",
+                            true,
+                        ) {
+                            callbacks.onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                        })
                     })
                 }
                 addView(numberField(

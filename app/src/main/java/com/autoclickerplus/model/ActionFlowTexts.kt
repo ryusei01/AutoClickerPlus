@@ -14,9 +14,11 @@ fun AutomationAction.flowTitle(): String = when (this) {
 fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     is AutomationAction.Tap ->
         "(${x.roundToInt()}, ${y.roundToInt()})  → ${waitAfterMs}ms ±${waitJitterMs}"
-    is AutomationAction.Swipe ->
+    is AutomationAction.Swipe -> {
+        val full = if (fullScroll) " すばやく" else ""
         "(${startX.roundToInt()}, ${startY.roundToInt()}) → " +
-            "(${endX.roundToInt()}, ${endY.roundToInt()})  ${durationMs}ms"
+            "(${endX.roundToInt()}, ${endY.roundToInt()})  ${durationMs}ms$full"
+    }
     is AutomationAction.IfBlock -> {
         val cond = conditions.firstOrNull()?.summary() ?: "条件なし"
         val extra = if (conditions.size > 1) " ほか${conditions.size - 1}" else ""

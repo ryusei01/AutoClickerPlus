@@ -1225,10 +1225,17 @@ private fun ActionCard(
                 }
 
                 if (action is AutomationAction.Swipe) {
-                    TextButton(onClick = {
-                        onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
-                    }) {
-                        Text(if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF")
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = {
+                            onReplace(action.copy(fullScroll = !action.fullScroll))
+                        }) {
+                            Text(if (action.fullScroll) "すばやくスワイプ: ON" else "すばやくスワイプ: OFF")
+                        }
+                        TextButton(onClick = {
+                            onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                        }) {
+                            Text(if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF")
+                        }
                     }
                 }
 
