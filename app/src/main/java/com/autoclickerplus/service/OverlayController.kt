@@ -137,7 +137,7 @@ class OverlayController(
         statusLabel = status
     }
 
-    fun showPicker(actionId: String) {
+    fun showPicker(actionId: String, removeOnCancel: Boolean = false) {
         val action = config.actions.firstOrNull { it.id == actionId } ?: return
         val sequence = config.actions.indexOfFirst { it.id == actionId } + 1
         removeControls()
@@ -151,7 +151,13 @@ class OverlayController(
                     actions = config.actions.map { if (it.id == updated.id) updated else it },
                 ))
             },
-            onCancel = { editor.show(config) },
+            onCancel = {
+                if (removeOnCancel) {
+                    callbacks.onRemove(actionId)
+                    config = config.copy(actions = config.actions.filterNot { it.id == actionId })
+                }
+                editor.show(config)
+            },
         )
     }
 

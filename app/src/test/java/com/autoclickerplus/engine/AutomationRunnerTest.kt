@@ -40,6 +40,7 @@ class AutomationRunnerTest {
             executor = executor,
             randomizer = ActionRandomizer(Random(7)),
             wait = { waits += it },
+            waitForLoopBoundary = { calls += "boundary" },
         )
         val config = AutomationConfig(
             actions = listOf(
@@ -54,7 +55,7 @@ class AutomationRunnerTest {
         assertFalse(runner.start(config, ScreenBounds(1080, 2400)))
         advanceUntilIdle()
 
-        assertEquals(listOf("tap", "swipe", "tap", "swipe"), calls)
+        assertEquals(listOf("tap", "swipe", "boundary", "tap", "swipe"), calls)
         assertEquals(4, waits.size)
         assertEquals(RunnerState.IDLE, runner.state.value)
     }

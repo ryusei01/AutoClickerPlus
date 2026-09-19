@@ -91,6 +91,7 @@ class AutomationRunner(
     private val executor: GestureExecutor,
     private val randomizer: ActionRandomizer = ActionRandomizer(),
     private val wait: suspend (Long) -> Unit = { delay(it) },
+    private val waitForLoopBoundary: suspend () -> Unit = { delay(LOOP_BOUNDARY_MS) },
 ) {
     private val mutableState = MutableStateFlow(RunnerState.IDLE)
     val state: StateFlow<RunnerState> = mutableState.asStateFlow()
@@ -138,8 +139,15 @@ class AutomationRunner(
                 wait(randomizer.waitMs(action.waitAfterMs))
             }
             loop++
+            if (loop < totalLoops) {
+                waitForLoopBoundary()
+            }
         }
     }
 
     private class GestureFailedException : RuntimeException()
+
+    private companion object {
+        const val LOOP_BOUNDARY_MS = 16L
+    }
 }

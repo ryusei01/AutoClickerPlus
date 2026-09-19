@@ -4,6 +4,8 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.autoclickerplus.data.AutomationRepository
@@ -35,6 +37,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private lateinit var runner: AutomationRunner
     private lateinit var overlay: OverlayController
     private val configMutex = Mutex()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var currentConfig = AutomationConfig()
 
     override fun onServiceConnected() {
@@ -137,7 +140,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private fun addAndPick(action: AutomationAction) {
         serviceScope.launch {
             updateConfig { AutomationConfigEditor.add(it, action) }
-            overlay.showPicker(action.id)
+            overlay.showPicker(action.id, removeOnCancel = true)
         }
     }
 
@@ -163,16 +166,16 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 gesture,
                 object : GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
-                        continuation.resumeIfActive(true)
+                        mainHandler.post { continuation.resumeIfActive(true) }
                     }
 
                     override fun onCancelled(gestureDescription: GestureDescription?) {
-                        continuation.resumeIfActive(false)
+                        mainHandler.post { continuation.resumeIfActive(false) }
                     }
                 },
                 null,
             )
-            if (!started) continuation.resumeIfActive(false)
+            if (!started) mainHandler.post { continuation.resumeIfActive(false) }
         }
 
     @Suppress("DEPRECATION")

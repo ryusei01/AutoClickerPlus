@@ -244,15 +244,19 @@ class FloatingEditorOverlay(
         }
 
     private fun numberField(
-        hint: String,
+        labelText: String,
         value: String,
         onCommit: (String) -> Unit,
     ) = LinearLayout(service).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        orientation = LinearLayout.VERTICAL
+        addView(label(labelText))
+        val inputRow = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val field = EditText(service).apply {
             setText(value)
-            setHint(hint)
+            hint = "数値を入力"
             setTextColor(Color.WHITE)
             setHintTextColor(0xFFBBBBBB.toInt())
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -269,11 +273,12 @@ class FloatingEditorOverlay(
                 }
             }
         }
-        addView(field, LinearLayout.LayoutParams(0, dp(52), 1f))
-        addView(smallButton("保存", true) {
+        inputRow.addView(field, LinearLayout.LayoutParams(0, dp(52), 1f))
+        inputRow.addView(smallButton("保存", true) {
             onCommit(field.text.toString())
             field.clearFocus()
         })
+        addView(inputRow)
     }
 
     private fun actionButton(icon: Int, text: String, onClick: () -> Unit) =
