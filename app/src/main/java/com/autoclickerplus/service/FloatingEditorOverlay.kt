@@ -1,6 +1,7 @@
 package com.autoclickerplus.service
 
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -21,22 +22,33 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.autoclickerplus.R
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.BranchSide
+import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
+import com.autoclickerplus.model.TextMatchMode
 import kotlin.math.roundToInt
 
 data class FloatingEditorCallbacks(
     val onAddTap: () -> Unit,
     val onAddSwipe: () -> Unit,
+    val onAddIf: () -> Unit,
+    val onAddToBranch: (String, BranchSide, AutomationAction) -> Unit,
     val onReplace: (AutomationAction) -> Unit,
+    val onAddCondition: (String, AutomationCondition) -> Unit,
+    val onReplaceCondition: (String, AutomationCondition) -> Unit,
+    val onRemoveCondition: (String, String) -> Unit,
     val onRemove: (String) -> Unit,
     val onMove: (String, Int) -> Unit,
     val onPickCoordinates: (String) -> Unit,
+    val onPickColor: (String, String) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
     val onClose: () -> Unit,
 )
 
+@SuppressLint("SetTextI18n")
 class FloatingEditorOverlay(
     private val service: AccessibilityService,
     private val callbacks: FloatingEditorCallbacks,
@@ -46,6 +58,7 @@ class FloatingEditorOverlay(
     private var content: LinearLayout? = null
     private var params: WindowManager.LayoutParams? = null
     private var config = AutomationConfig()
+    private val collapsedIfIds = mutableSetOf<String>()
 
     val isVisible: Boolean get() = root != null
 
@@ -147,7 +160,7 @@ class FloatingEditorOverlay(
             body.addView(label(service.getString(R.string.empty_actions)))
         } else {
             config.actions.forEachIndexed { index, action ->
-                body.addView(actionEditor(index, action))
+                body.addView(actionEditor("${index + 1}", index, config.actions.size, action))
             }
         }
     }
@@ -157,6 +170,10 @@ class FloatingEditorOverlay(
         gravity = Gravity.CENTER
         addView(actionButton(R.drawable.ic_tap, "タップ追加", callbacks.onAddTap))
         addView(actionButton(R.drawable.ic_swipe, "スクロール追加", callbacks.onAddSwipe))
+        addView(Button(service).apply {
+            text = "IF追加"
+            setOnClickListener { callbacks.onAddIf() }
+        })
     }
 
     private fun repeatControls() = LinearLayout(service).apply {
@@ -188,7 +205,14 @@ class FloatingEditorOverlay(
         }
     }
 
-    private fun actionEditor(index: Int, action: AutomationAction) =
+    private fun actionEditor(
+        path: String,
+        index: Int,
+        siblingCount: Int,
+        action: AutomationAction,
+    ): View = if (action is AutomationAction.IfBlock) {
+        ifEditor(path, index, siblingCount, action)
+    } else {
         LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
@@ -197,9 +221,9 @@ class FloatingEditorOverlay(
             addView(LinearLayout(service).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                addView(label("${index + 1}. $type"), LinearLayout.LayoutParams(0, dp(44), 1f))
+                addView(label("$path. $type"), LinearLayout.LayoutParams(0, dp(44), 1f))
                 addView(smallButton("↑", index > 0) { callbacks.onMove(action.id, -1) })
-                addView(smallButton("↓", index < config.actions.lastIndex) {
+                addView(smallButton("↓", index < siblingCount - 1) {
                     callbacks.onMove(action.id, 1)
                 })
                 addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
@@ -224,6 +248,12 @@ class FloatingEditorOverlay(
                         callbacks.onReplace(action.copy(durationMs = it.coerceIn(100L, 2_000L)))
                     }
                 })
+                addView(smallButton(
+                    if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF",
+                    true,
+                ) {
+                    callbacks.onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                })
             }
             addView(LinearLayout(service).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -242,6 +272,211 @@ class FloatingEditorOverlay(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { setMargins(0, dp(4), 0, dp(6)) }
         }
+    }
+
+    private fun ifEditor(
+        path: String,
+        index: Int,
+        siblingCount: Int,
+        block: AutomationAction.IfBlock,
+    ) = LinearLayout(service).apply {
+        val expanded = block.id !in collapsedIfIds
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        background = roundedBackground(0xFF403D48.toInt(), dp(12).toFloat())
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("IF $path"), LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(smallButton(block.operator.name, true) {
+                callbacks.onReplace(
+                    block.copy(
+                        operator = if (block.operator == ConditionOperator.AND) {
+                            ConditionOperator.OR
+                        } else {
+                            ConditionOperator.AND
+                        },
+                    ),
+                )
+            })
+            addView(smallButton(if (expanded) "閉じる" else "開く", true) {
+                if (expanded) collapsedIfIds += block.id else collapsedIfIds -= block.id
+                render()
+            })
+            addView(smallButton("↑", index > 0) { callbacks.onMove(block.id, -1) })
+            addView(smallButton("↓", index < siblingCount - 1) {
+                callbacks.onMove(block.id, 1)
+            })
+            addView(smallButton("削除", true) { callbacks.onRemove(block.id) })
+        })
+        addView(numberField(
+            "次の動作までの待機時間 ms（±30）",
+            block.waitAfterMs.toString(),
+        ) { value ->
+            value.toLongOrNull()?.let { callbacks.onReplace(block.withWait(it)) }
+        })
+        if (expanded) {
+        addView(label("条件"))
+        block.conditions.forEach { addView(conditionEditor(block.id, it)) }
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(smallButton("+文字", true) {
+                callbacks.onAddCondition(block.id, AutomationCondition.TextExists())
+            })
+            addView(smallButton("+活性", true) {
+                callbacks.onAddCondition(block.id, AutomationCondition.UiState())
+            })
+            addView(smallButton("+色", true) {
+                callbacks.onAddCondition(block.id, AutomationCondition.PixelColor())
+            })
+        })
+        addView(branchEditor("$path-T", "THEN", block.id, BranchSide.THEN, block.thenActions))
+        addView(branchEditor("$path-E", "ELSE", block.id, BranchSide.ELSE, block.elseActions))
+        }
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { setMargins(0, dp(4), 0, dp(6)) }
+    }
+
+    private fun conditionEditor(
+        blockId: String,
+        condition: AutomationCondition,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(8), dp(4), 0, dp(4))
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(label(when (condition) {
+                is AutomationCondition.TextExists -> "文字存在"
+                is AutomationCondition.UiState -> "活性状態"
+                is AutomationCondition.PixelColor -> "画面色"
+            }), LinearLayout.LayoutParams(0, dp(40), 1f))
+            addView(smallButton("条件削除", true) {
+                callbacks.onRemoveCondition(blockId, condition.id)
+            })
+        })
+        when (condition) {
+            is AutomationCondition.TextExists -> {
+                addView(textField("検索文字", condition.query) {
+                    callbacks.onReplaceCondition(blockId, condition.copy(query = it))
+                })
+                addView(smallButton(condition.matchMode.displayName, true) {
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.copy(matchMode = condition.matchMode.toggled()),
+                    )
+                })
+            }
+            is AutomationCondition.UiState -> {
+                addView(textField("対象文字", condition.query) {
+                    callbacks.onReplaceCondition(blockId, condition.copy(query = it))
+                })
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(smallButton(condition.matchMode.displayName, true) {
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(matchMode = condition.matchMode.toggled()),
+                        )
+                    })
+                    addView(smallButton("enabled:${condition.expectedEnabled.displayName}", true) {
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(
+                                expectedEnabled = condition.expectedEnabled.nextExpected(),
+                            ),
+                        )
+                    })
+                    addView(smallButton("click:${condition.expectedClickable.displayName}", true) {
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(
+                                expectedClickable = condition.expectedClickable.nextExpected(),
+                            ),
+                        )
+                    })
+                })
+            }
+            is AutomationCondition.PixelColor -> {
+                addView(label(
+                    "座標 (${condition.x}, ${condition.y})  色 " +
+                        String.format("#%08X", condition.argb),
+                ))
+                addView(smallButton("画面から色を取得", true) {
+                    callbacks.onPickColor(blockId, condition.id)
+                })
+                addView(numberField("色の許容差 0～255", condition.tolerance.toString()) {
+                    it.toIntOrNull()?.let { value ->
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(tolerance = value.coerceIn(0, 255)),
+                        )
+                    }
+                })
+            }
+        }
+    }
+
+    private fun branchEditor(
+        pathPrefix: String,
+        title: String,
+        blockId: String,
+        side: BranchSide,
+        actions: List<AutomationAction>,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(10), dp(6), 0, dp(6))
+        addView(label(title))
+        actions.forEachIndexed { index, action ->
+            addView(actionEditor("$pathPrefix${index + 1}", index, actions.size, action))
+        }
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(smallButton("+タップ", true) {
+                callbacks.onAddToBranch(blockId, side, AutomationAction.Tap())
+            })
+            addView(smallButton("+スクロール", true) {
+                callbacks.onAddToBranch(blockId, side, AutomationAction.Swipe())
+            })
+            addView(smallButton("+IF", true) {
+                callbacks.onAddToBranch(blockId, side, AutomationAction.IfBlock())
+            })
+        })
+    }
+
+    private fun textField(
+        labelText: String,
+        value: String,
+        onCommit: (String) -> Unit,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(label(labelText))
+        val row = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val field = EditText(service).apply {
+            setText(value)
+            setTextColor(Color.WHITE)
+            setSingleLine(true)
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    onCommit(text.toString())
+                    clearFocus()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        row.addView(field, LinearLayout.LayoutParams(0, dp(52), 1f))
+        row.addView(smallButton("保存", true) {
+            onCommit(field.text.toString())
+            field.clearFocus()
+        })
+        addView(row)
+    }
 
     private fun numberField(
         labelText: String,
@@ -326,6 +561,7 @@ class FloatingEditorOverlay(
         is AutomationAction.Swipe ->
             "(${action.startX.roundToInt()}, ${action.startY.roundToInt()}) → " +
                 "(${action.endX.roundToInt()}, ${action.endY.roundToInt()})"
+        is AutomationAction.IfBlock -> "条件分岐"
     }
 
     private fun makeDraggable(
@@ -364,12 +600,33 @@ class FloatingEditorOverlay(
     private fun AutomationAction.withWait(value: Long): AutomationAction = when (this) {
         is AutomationAction.Tap -> copy(waitAfterMs = value.coerceAtLeast(0L))
         is AutomationAction.Swipe -> copy(waitAfterMs = value.coerceAtLeast(0L))
+        is AutomationAction.IfBlock -> copy(waitAfterMs = value.coerceAtLeast(0L))
     }
 
     private fun AutomationAction.withJitter(value: Int): AutomationAction = when (this) {
         is AutomationAction.Tap -> copy(jitterPx = value.coerceIn(3, 10))
         is AutomationAction.Swipe -> copy(jitterPx = value.coerceIn(3, 10))
+        is AutomationAction.IfBlock -> this
     }
+
+    private fun TextMatchMode.toggled() =
+        if (this == TextMatchMode.EXACT) TextMatchMode.CONTAINS else TextMatchMode.EXACT
+
+    private val TextMatchMode.displayName: String
+        get() = if (this == TextMatchMode.EXACT) "完全一致" else "部分一致"
+
+    private fun Boolean?.nextExpected(): Boolean? = when (this) {
+        null -> true
+        true -> false
+        false -> null
+    }
+
+    private val Boolean?.displayName: String
+        get() = when (this) {
+            null -> "任意"
+            true -> "true"
+            false -> "false"
+        }
 
     private fun roundedBackground(color: Int, radius: Float) = GradientDrawable().apply {
         setColor(color)

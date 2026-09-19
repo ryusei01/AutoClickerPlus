@@ -1,7 +1,9 @@
 package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -30,6 +32,7 @@ class AutomationRunnerTest {
                 start: GesturePoint,
                 end: GesturePoint,
                 durationMs: Long,
+                stopAtEnd: Boolean,
             ): Boolean {
                 calls += "swipe"
                 return true
@@ -56,7 +59,57 @@ class AutomationRunnerTest {
         advanceUntilIdle()
 
         assertEquals(listOf("tap", "swipe", "boundary", "tap", "swipe"), calls)
-        assertEquals(4, waits.size)
+        assertEquals(6, waits.size)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun waitsForFullSwipeDurationBeforeNextAction() = runTest {
+        val calls = mutableListOf<String>()
+        var clock = 0L
+        val executor = object : GestureExecutor {
+            override suspend fun tap(point: GesturePoint): Boolean {
+                calls += "tap"
+                return true
+            }
+
+            override suspend fun swipe(
+                start: GesturePoint,
+                end: GesturePoint,
+                durationMs: Long,
+                stopAtEnd: Boolean,
+            ): Boolean {
+                calls += "swipe"
+                clock += 40L
+                return true
+            }
+        }
+        val runner = AutomationRunner(
+            scope = this,
+            executor = executor,
+            wait = { duration ->
+                calls += "wait:$duration"
+                clock += duration
+            },
+            waitForLoopBoundary = {},
+            nowMs = { clock },
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Swipe(durationMs = 300L, waitAfterMs = 120L, stopAtEnd = false),
+                AutomationAction.Tap(),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals("swipe", calls[0])
+        assertEquals("wait:340", calls[1])
+        assertTrue(calls[2].startsWith("wait:"))
+        assertEquals("tap", calls[3])
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 
@@ -73,6 +126,7 @@ class AutomationRunnerTest {
                 start: GesturePoint,
                 end: GesturePoint,
                 durationMs: Long,
+                stopAtEnd: Boolean,
             ): Boolean {
                 callCount++
                 return true
@@ -105,6 +159,7 @@ class AutomationRunnerTest {
                 start: GesturePoint,
                 end: GesturePoint,
                 durationMs: Long,
+                stopAtEnd: Boolean,
             ) = true
         }
         val runner = AutomationRunner(
@@ -124,5 +179,230 @@ class AutomationRunnerTest {
 
         assertEquals(1, callCount)
         assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun executesNestedThenAndElseBranchesInOrder() = runTest {
+        val tappedX = mutableListOf<Float>()
+        val executor = object : GestureExecutor {
+            override suspend fun tap(point: GesturePoint): Boolean {
+                tappedX += point.x
+                return true
+            }
+
+            override suspend fun swipe(
+                start: GesturePoint,
+                end: GesturePoint,
+                durationMs: Long,
+                stopAtEnd: Boolean,
+            ) = true
+        }
+        val evaluator = ConditionEvaluator { conditions, _ ->
+            (conditions.single() as AutomationCondition.TextExists).query == "true"
+        }
+        val nested = AutomationAction.IfBlock(
+            conditions = listOf(AutomationCondition.TextExists(query = "false")),
+            thenActions = listOf(AutomationAction.Tap(x = 100f, y = 100f)),
+            elseActions = listOf(AutomationAction.Tap(x = 200f, y = 100f)),
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    conditions = listOf(AutomationCondition.TextExists(query = "true")),
+                    operator = ConditionOperator.AND,
+                    thenActions = listOf(nested),
+                    elseActions = listOf(AutomationAction.Tap(x = 50f, y = 100f)),
+                ),
+                AutomationAction.Tap(x = 300f, y = 100f),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+        val runner = AutomationRunner(
+            scope = this,
+            executor = executor,
+            conditionEvaluator = evaluator,
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(2, tappedX.size)
+        assertTrue(tappedX[0] in 195f..205f)
+        assertTrue(tappedX[1] in 295f..305f)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun conditionEvaluationErrorFailsSafely() = runTest {
+        val executor = object : GestureExecutor {
+            override suspend fun tap(point: GesturePoint) = true
+            override suspend fun swipe(
+                start: GesturePoint,
+                end: GesturePoint,
+                durationMs: Long,
+                stopAtEnd: Boolean,
+            ) = true
+        }
+        val runner = AutomationRunner(
+            scope = this,
+            executor = executor,
+            conditionEvaluator = ConditionEvaluator { _, _ ->
+                throw ConditionEvaluationException("unavailable")
+            },
+        )
+        val config = AutomationConfig(
+            actions = listOf(AutomationAction.IfBlock()),
+            repeatMode = RepeatMode.COUNT,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(RunnerState.FAILED, runner.state.value)
+    }
+
+    @Test
+    fun orMatchesWhenAnyConditionIsTrue() = runTest {
+        val calls = mutableListOf<String>()
+        val executor = recordingExecutor(calls)
+        val runner = AutomationRunner(
+            scope = this,
+            executor = executor,
+            conditionEvaluator = ConditionEvaluator { conditions, operator ->
+                require(operator == ConditionOperator.OR)
+                conditions.filterIsInstance<AutomationCondition.TextExists>()
+                    .any { it.query == "yes" }
+            },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    conditions = listOf(
+                        AutomationCondition.TextExists(query = "no"),
+                        AutomationCondition.TextExists(query = "yes"),
+                    ),
+                    operator = ConditionOperator.OR,
+                    thenActions = listOf(AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 3)),
+                    elseActions = listOf(AutomationAction.Tap(x = 90f, y = 10f, jitterPx = 3)),
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+        )
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+        assertEquals(listOf("then"), calls)
+    }
+
+    @Test
+    fun andGoesToElseWhenAnyConditionIsFalse() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = recordingExecutor(calls),
+            conditionEvaluator = ConditionEvaluator { conditions, operator ->
+                require(operator == ConditionOperator.AND)
+                conditions.filterIsInstance<AutomationCondition.TextExists>()
+                    .all { it.query == "yes" }
+            },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    conditions = listOf(
+                        AutomationCondition.TextExists(query = "yes"),
+                        AutomationCondition.TextExists(query = "no"),
+                    ),
+                    operator = ConditionOperator.AND,
+                    thenActions = listOf(AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 3)),
+                    elseActions = listOf(AutomationAction.Tap(x = 90f, y = 10f, jitterPx = 3)),
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+        )
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+        assertEquals(listOf("else"), calls)
+    }
+
+    @Test
+    fun andGoesToThenWhenEveryConditionMatches() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = recordingExecutor(calls),
+            conditionEvaluator = ConditionEvaluator { conditions, operator ->
+                require(operator == ConditionOperator.AND)
+                conditions.filterIsInstance<AutomationCondition.TextExists>()
+                    .all { it.query == "yes" }
+            },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    conditions = listOf(
+                        AutomationCondition.TextExists(query = "yes"),
+                        AutomationCondition.TextExists(query = "yes"),
+                    ),
+                    operator = ConditionOperator.AND,
+                    thenActions = listOf(AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 3)),
+                    elseActions = listOf(AutomationAction.Tap(x = 90f, y = 10f, jitterPx = 3)),
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+        )
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+        assertEquals(listOf("then"), calls)
+    }
+
+    @Test
+    fun stopCancelsNestedIfExecution() = runTest {
+        var evaluations = 0
+        val runner = AutomationRunner(
+            scope = this,
+            executor = recordingExecutor(mutableListOf()),
+            conditionEvaluator = ConditionEvaluator { _, _ ->
+                evaluations++
+                true
+            },
+            wait = { awaitCancellation() },
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    thenActions = listOf(AutomationAction.Tap()),
+                ),
+            ),
+            repeatMode = RepeatMode.INFINITE,
+        )
+        runner.start(config, ScreenBounds(1080, 2400))
+        runCurrent()
+        runner.stop()
+        advanceUntilIdle()
+        assertEquals(1, evaluations)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    private fun recordingExecutor(calls: MutableList<String>) = object : GestureExecutor {
+        override suspend fun tap(point: GesturePoint): Boolean {
+            calls += if (point.x < 50f) "then" else "else"
+            return true
+        }
+
+        override suspend fun swipe(
+            start: GesturePoint,
+            end: GesturePoint,
+            durationMs: Long,
+            stopAtEnd: Boolean,
+        ) = true
     }
 }

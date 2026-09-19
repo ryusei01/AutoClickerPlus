@@ -14,7 +14,10 @@ import android.widget.TextView
 import com.autoclickerplus.R
 import com.autoclickerplus.engine.RunnerState
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.AutomationConfigEditor
+import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.RepeatMode
 import kotlin.math.roundToInt
 
@@ -23,7 +26,13 @@ data class OverlayCallbacks(
     val onStop: () -> Unit,
     val onAddTap: () -> Unit,
     val onAddSwipe: () -> Unit,
+    val onAddIf: () -> Unit,
+    val onAddToBranch: (String, BranchSide, AutomationAction) -> Unit,
     val onReplace: (AutomationAction) -> Unit,
+    val onAddCondition: (String, AutomationCondition) -> Unit,
+    val onReplaceCondition: (String, AutomationCondition) -> Unit,
+    val onRemoveCondition: (String, String) -> Unit,
+    val onPickColor: (String, String) -> Unit,
     val onRemove: (String) -> Unit,
     val onMove: (String, Int) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
@@ -52,10 +61,16 @@ class OverlayController(
             FloatingEditorCallbacks(
                 onAddTap = callbacks.onAddTap,
                 onAddSwipe = callbacks.onAddSwipe,
+                onAddIf = callbacks.onAddIf,
+                onAddToBranch = callbacks.onAddToBranch,
                 onReplace = callbacks.onReplace,
+                onAddCondition = callbacks.onAddCondition,
+                onReplaceCondition = callbacks.onReplaceCondition,
+                onRemoveCondition = callbacks.onRemoveCondition,
                 onRemove = callbacks.onRemove,
                 onMove = callbacks.onMove,
                 onPickCoordinates = ::showPicker,
+                onPickColor = callbacks.onPickColor,
                 onRepeatMode = callbacks.onRepeatMode,
                 onRepeatCount = callbacks.onRepeatCount,
                 onClose = {
@@ -138,8 +153,9 @@ class OverlayController(
     }
 
     fun showPicker(actionId: String, removeOnCancel: Boolean = false) {
-        val action = config.actions.firstOrNull { it.id == actionId } ?: return
-        val sequence = config.actions.indexOfFirst { it.id == actionId } + 1
+        val action = AutomationConfigEditor.findAction(config, actionId) ?: return
+        if (action is AutomationAction.IfBlock) return
+        val sequence = AutomationConfigEditor.sequencePath(config, actionId) ?: "?"
         removeControls()
         editor.hide()
         picker.show(
@@ -147,18 +163,39 @@ class OverlayController(
             sequenceNumber = sequence,
             onDone = { updated ->
                 callbacks.onReplace(updated)
-                editor.show(config.copy(
-                    actions = config.actions.map { if (it.id == updated.id) updated else it },
-                ))
+                config = AutomationConfigEditor.replace(config, updated)
+                editor.show(config)
             },
             onCancel = {
                 if (removeOnCancel) {
                     callbacks.onRemove(actionId)
-                    config = config.copy(actions = config.actions.filterNot { it.id == actionId })
+                    config = AutomationConfigEditor.remove(config, actionId)
                 }
                 editor.show(config)
             },
         )
+    }
+
+    fun showColorPicker(
+        initialX: Int,
+        initialY: Int,
+        onDone: (Int, Int) -> Unit,
+    ) {
+        removeControls()
+        editor.hide()
+        picker.showColor(
+            initialX = initialX,
+            initialY = initialY,
+            onDone = { x, y ->
+                onDone(x, y)
+            },
+            onCancel = { editor.show(config) },
+        )
+    }
+
+    fun showEditor() {
+        removeControls()
+        editor.show(config)
     }
 
     fun updateConfig(config: AutomationConfig) {
@@ -169,6 +206,11 @@ class OverlayController(
     fun updateRunnerState(state: RunnerState) {
         runnerState = state
         statusLabel?.text = state.label
+    }
+
+    fun hideTransientOverlays() {
+        picker.hide()
+        editor.hide()
     }
 
     fun removeAll() {

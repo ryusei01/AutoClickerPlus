@@ -1,9 +1,10 @@
 <resources>
     <string name="app_name">AutoClickerPlus</string>
     <string name="service_name">AutoClickerPlus 操作サービス</string>
-    <string name="service_description">設定したタップとスクロールを画面上で実行します。</string>
-    <string name="picker_title">位置指定 #%1$d</string>
+    <string name="service_description">設定したタップ、スクロール、条件分岐を画面上で実行します。</string>
+    <string name="picker_title">位置指定 #%1$s</string>
     <string name="empty_actions">アクションがありません。上のボタンから追加してください。</string>
     <string name="repeat_until_stop">STOPまで</string>
     <string name="repeat_count">回数指定</string>
+    <string name="color_picker_title">色を取得する位置</string>
 </resources>

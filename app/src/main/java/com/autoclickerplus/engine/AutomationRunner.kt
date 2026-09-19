@@ -1,7 +1,9 @@
 package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -22,8 +24,23 @@ data class GesturePoint(val x: Float, val y: Float)
 
 interface GestureExecutor {
     suspend fun tap(point: GesturePoint): Boolean
-    suspend fun swipe(start: GesturePoint, end: GesturePoint, durationMs: Long): Boolean
+    suspend fun swipe(
+        start: GesturePoint,
+        end: GesturePoint,
+        durationMs: Long,
+        stopAtEnd: Boolean = true,
+    ): Boolean
 }
+
+fun interface ConditionEvaluator {
+    suspend fun evaluate(
+        conditions: List<AutomationCondition>,
+        operator: ConditionOperator,
+    ): Boolean
+}
+
+class ConditionEvaluationException(message: String, cause: Throwable? = null) :
+    RuntimeException(message, cause)
 
 enum class RunnerState {
     IDLE,
@@ -89,9 +106,13 @@ class ActionRandomizer(private val random: Random = Random.Default) {
 class AutomationRunner(
     private val scope: CoroutineScope,
     private val executor: GestureExecutor,
+    private val conditionEvaluator: ConditionEvaluator = ConditionEvaluator { _, _ ->
+        throw ConditionEvaluationException("条件評価機能が接続されていません")
+    },
     private val randomizer: ActionRandomizer = ActionRandomizer(),
     private val wait: suspend (Long) -> Unit = { delay(it) },
     private val waitForLoopBoundary: suspend () -> Unit = { delay(LOOP_BOUNDARY_MS) },
+    private val nowMs: () -> Long = { System.currentTimeMillis() },
 ) {
     private val mutableState = MutableStateFlow(RunnerState.IDLE)
     val state: StateFlow<RunnerState> = mutableState.asStateFlow()
@@ -111,6 +132,8 @@ class AutomationRunner(
                 throw cancelled
             } catch (_: GestureFailedException) {
                 mutableState.value = RunnerState.FAILED
+            } catch (_: ConditionEvaluationException) {
+                mutableState.value = RunnerState.FAILED
             }
         }
         return true
@@ -127,17 +150,7 @@ class AutomationRunner(
         val totalLoops = if (config.repeatMode == RepeatMode.INFINITE) Int.MAX_VALUE else config.repeatCount
         var loop = 0
         while (loop < totalLoops) {
-            for (action in config.actions) {
-                val succeeded = when (action) {
-                    is AutomationAction.Tap -> executor.tap(randomizer.tapPoint(action, bounds))
-                    is AutomationAction.Swipe -> {
-                        val (start, end) = randomizer.swipePoints(action, bounds)
-                        executor.swipe(start, end, action.durationMs)
-                    }
-                }
-                if (!succeeded) throw GestureFailedException()
-                wait(randomizer.waitMs(action.waitAfterMs))
-            }
+            executeActions(config.actions, bounds)
             loop++
             if (loop < totalLoops) {
                 waitForLoopBoundary()
@@ -145,9 +158,46 @@ class AutomationRunner(
         }
     }
 
+    private suspend fun executeActions(
+        actions: List<AutomationAction>,
+        bounds: ScreenBounds,
+    ) {
+        for (action in actions) {
+            when (action) {
+                is AutomationAction.Tap -> {
+                    if (!executor.tap(randomizer.tapPoint(action, bounds))) {
+                        throw GestureFailedException()
+                    }
+                }
+                is AutomationAction.Swipe -> {
+                    val (start, end) = randomizer.swipePoints(action, bounds)
+                    val startedAt = nowMs()
+                    if (!executor.swipe(start, end, action.durationMs, action.stopAtEnd)) {
+                        throw GestureFailedException()
+                    }
+                    val elapsed = (nowMs() - startedAt).coerceAtLeast(0L)
+                    val expectedMs = action.durationMs +
+                        if (action.stopAtEnd) SWIPE_HOLD_MS else 0L
+                    val remainingStroke = (expectedMs - elapsed).coerceAtLeast(0L)
+                    wait(remainingStroke + SWIPE_SETTLE_MS)
+                }
+                is AutomationAction.IfBlock -> {
+                    val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
+                    executeActions(
+                        if (matched) action.thenActions else action.elseActions,
+                        bounds,
+                    )
+                }
+            }
+            wait(randomizer.waitMs(action.waitAfterMs))
+        }
+    }
+
     private class GestureFailedException : RuntimeException()
 
     private companion object {
         const val LOOP_BOUNDARY_MS = 16L
+        const val SWIPE_SETTLE_MS = 80L
+        const val SWIPE_HOLD_MS = 180L
     }
 }

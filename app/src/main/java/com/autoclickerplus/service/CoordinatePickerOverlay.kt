@@ -23,13 +23,13 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     private var controlBar: View? = null
     private var lineView: SwipeLineView? = null
     private var action: AutomationAction? = null
-    private var sequenceNumber: Int = 0
+    private var sequenceNumber: String = ""
 
-    val isVisible: Boolean get() = action != null
+    val isVisible: Boolean get() = markerWindows.isNotEmpty() || controlBar != null
 
     fun show(
         action: AutomationAction,
-        sequenceNumber: Int,
+        sequenceNumber: String,
         onDone: (AutomationAction) -> Unit,
         onCancel: () -> Unit,
     ) {
@@ -40,7 +40,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         when (action) {
             is AutomationAction.Tap -> {
                 markerWindows += addMarker(
-                    label = sequenceNumber.toString(),
+                    label = sequenceNumber,
                     color = Color.rgb(211, 47, 47),
                     centerX = action.x,
                     centerY = action.y,
@@ -61,9 +61,44 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                 )
                 showSwipeLine()
             }
+            is AutomationAction.IfBlock -> return
         }
-        showControlBar(onDone, onCancel)
+        showControlBar(
+            title = service.getString(R.string.picker_title, sequenceNumber),
+            onDone = {
+                val updated = updatedAction() ?: return@showControlBar
+                hide()
+                onDone(updated)
+            },
+            onCancel = onCancel,
+        )
         updateLine()
+    }
+
+    fun showColor(
+        initialX: Int,
+        initialY: Int,
+        onDone: (Int, Int) -> Unit,
+        onCancel: () -> Unit,
+    ) {
+        hide()
+        markerWindows += addMarker(
+            label = "色",
+            color = Color.rgb(123, 31, 162),
+            centerX = initialX.toFloat(),
+            centerY = initialY.toFloat(),
+        )
+        showControlBar(
+            title = service.getString(R.string.color_picker_title),
+            onDone = {
+                val marker = markerWindows.firstOrNull() ?: return@showControlBar
+                val x = marker.centerX.roundToInt()
+                val y = marker.centerY.roundToInt()
+                hide()
+                onDone(x, y)
+            },
+            onCancel = onCancel,
+        )
     }
 
     fun hide() {
@@ -74,7 +109,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         lineView?.let { runCatching { windowManager.removeView(it) } }
         lineView = null
         action = null
-        sequenceNumber = 0
+        sequenceNumber = ""
     }
 
     private fun addMarker(
@@ -110,7 +145,8 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     }
 
     private fun showControlBar(
-        onDone: (AutomationAction) -> Unit,
+        title: String,
+        onDone: () -> Unit,
         onCancel: () -> Unit,
     ) {
         val bar = LinearLayout(service).apply {
@@ -129,7 +165,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         }
         bar.addView(dragHandle)
         bar.addView(TextView(service).apply {
-            text = service.getString(R.string.picker_title, sequenceNumber)
+            text = title
             setTextColor(Color.WHITE)
             setPadding(dp(8), 0, dp(8), 0)
         })
@@ -142,11 +178,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         })
         bar.addView(Button(service).apply {
             text = "決定"
-            setOnClickListener {
-                val updated = updatedAction() ?: return@setOnClickListener
-                hide()
-                onDone(updated)
-            }
+            setOnClickListener { onDone() }
         })
         val params = overlayParams(
             width = WindowManager.LayoutParams.WRAP_CONTENT,
@@ -266,6 +298,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                 endX = markerWindows[1].centerX,
                 endY = markerWindows[1].centerY,
             )
+            is AutomationAction.IfBlock -> null
         }
     }
 

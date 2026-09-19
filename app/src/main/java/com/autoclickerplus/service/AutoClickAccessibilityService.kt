@@ -8,15 +8,19 @@ import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
 import com.autoclickerplus.data.AutomationRepository
 import com.autoclickerplus.engine.AutomationRunner
+import com.autoclickerplus.engine.ConditionEvaluator
 import com.autoclickerplus.engine.GestureExecutor
 import com.autoclickerplus.engine.GesturePoint
 import com.autoclickerplus.engine.RunnerState
 import com.autoclickerplus.engine.ScreenBounds
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
+import com.autoclickerplus.model.BranchSide
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +39,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var repository: AutomationRepository
     private lateinit var runner: AutomationRunner
+    private lateinit var conditionEvaluator: AccessibilityConditionEvaluator
     private lateinit var overlay: OverlayController
     private val configMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -43,7 +48,15 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     override fun onServiceConnected() {
         super.onServiceConnected()
         repository = AutomationRepository(applicationContext)
-        runner = AutomationRunner(serviceScope, this)
+        conditionEvaluator = AccessibilityConditionEvaluator(this)
+        runner = AutomationRunner(
+            scope = serviceScope,
+            executor = this,
+            conditionEvaluator = ConditionEvaluator { conditions, operator ->
+                overlay.hideTransientOverlays()
+                conditionEvaluator.evaluate(conditions, operator)
+            },
+        )
         overlay = OverlayController(
             service = this,
             callbacks = OverlayCallbacks(
@@ -51,9 +64,34 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 onStop = { runner.stop() },
                 onAddTap = { addAndPick(AutomationAction.Tap()) },
                 onAddSwipe = { addAndPick(AutomationAction.Swipe()) },
+                onAddIf = {
+                    mutateConfig {
+                        AutomationConfigEditor.add(it, AutomationAction.IfBlock())
+                    }
+                    overlay.showEditor()
+                },
+                onAddToBranch = { blockId, side, action ->
+                    addToBranchAndMaybePick(blockId, side, action)
+                },
                 onReplace = { action ->
                     mutateConfig { AutomationConfigEditor.replace(it, action) }
                 },
+                onAddCondition = { blockId, condition ->
+                    mutateConfig {
+                        AutomationConfigEditor.addCondition(it, blockId, condition)
+                    }
+                },
+                onReplaceCondition = { blockId, condition ->
+                    mutateConfig {
+                        AutomationConfigEditor.replaceCondition(it, blockId, condition)
+                    }
+                },
+                onRemoveCondition = { blockId, conditionId ->
+                    mutateConfig {
+                        AutomationConfigEditor.removeCondition(it, blockId, conditionId)
+                    }
+                },
+                onPickColor = ::pickColorCondition,
                 onRemove = { actionId ->
                     mutateConfig { AutomationConfigEditor.remove(it, actionId) }
                 },
@@ -74,7 +112,9 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             runner.state.collect(overlay::updateRunnerState)
         }
         serviceScope.launch {
+            repository.migrateLegacyIfNeeded()
             repository.config.collect { config ->
+                if (currentConfig != config) runner.stop()
                 currentConfig = config
                 overlay.updateConfig(config)
             }
@@ -108,14 +148,50 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         start: GesturePoint,
         end: GesturePoint,
         durationMs: Long,
+        stopAtEnd: Boolean,
     ): Boolean {
-        val path = Path().apply {
+        val movePath = Path().apply {
             moveTo(start.x, start.y)
             lineTo(end.x, end.y)
         }
+        if (!stopAtEnd) {
+            return dispatch(
+                GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(movePath, 0L, durationMs))
+                    .build(),
+            )
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val moveStroke = GestureDescription.StrokeDescription(
+                movePath,
+                0L,
+                durationMs,
+                true,
+            )
+            val holdPath = Path().apply { moveTo(end.x, end.y) }
+            val holdStroke = moveStroke.continueStroke(
+                holdPath,
+                durationMs,
+                HOLD_AT_END_MS,
+                false,
+            )
+            return dispatch(
+                GestureDescription.Builder()
+                    .addStroke(moveStroke)
+                    .addStroke(holdStroke)
+                    .build(),
+            )
+        }
+        val moved = dispatch(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(movePath, 0L, durationMs))
+                .build(),
+        )
+        if (!moved) return false
+        val holdPath = Path().apply { moveTo(end.x, end.y) }
         return dispatch(
             GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs))
+                .addStroke(GestureDescription.StrokeDescription(holdPath, 0L, HOLD_AT_END_MS))
                 .build(),
         )
     }
@@ -123,6 +199,18 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private fun startConfiguredAutomation() {
         serviceScope.launch {
             val config = repository.config.first()
+            currentConfig = config
+            overlay.updateConfig(config)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R &&
+                config.actions.any { it.containsColorCondition() }
+            ) {
+                Toast.makeText(
+                    this@AutoClickAccessibilityService,
+                    "色条件にはAndroid 11以降が必要です",
+                    Toast.LENGTH_LONG,
+                ).show()
+                return@launch
+            }
             runner.start(config, screenBounds())
         }
     }
@@ -141,6 +229,58 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         serviceScope.launch {
             updateConfig { AutomationConfigEditor.add(it, action) }
             overlay.showPicker(action.id, removeOnCancel = true)
+        }
+    }
+
+    private fun addToBranchAndMaybePick(
+        blockId: String,
+        side: BranchSide,
+        action: AutomationAction,
+    ) {
+        serviceScope.launch {
+            updateConfig { AutomationConfigEditor.addToBranch(it, blockId, side, action) }
+            overlay.showEditor()
+            if (action is AutomationAction.Tap || action is AutomationAction.Swipe) {
+                overlay.showPicker(action.id, removeOnCancel = true)
+            }
+        }
+    }
+
+    private fun pickColorCondition(ifBlockId: String, conditionId: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Toast.makeText(this, "色判定にはAndroid 11以降が必要です", Toast.LENGTH_LONG).show()
+            return
+        }
+        serviceScope.launch {
+            runner.stop()
+            currentConfig = repository.config.first()
+            overlay.updateConfig(currentConfig)
+            val block = AutomationConfigEditor.findAction(currentConfig, ifBlockId)
+                as? AutomationAction.IfBlock ?: return@launch
+            val condition = block.conditions.firstOrNull { it.id == conditionId }
+                as? AutomationCondition.PixelColor ?: return@launch
+            overlay.showColorPicker(condition.x, condition.y) { x, y ->
+                serviceScope.launch {
+                    runCatching { conditionEvaluator.sampleColor(x, y) }
+                        .onSuccess { color ->
+                            updateConfig {
+                                AutomationConfigEditor.replaceCondition(
+                                    it,
+                                    ifBlockId,
+                                    condition.copy(x = x, y = y, argb = color),
+                                )
+                            }
+                        }
+                        .onFailure {
+                            Toast.makeText(
+                                this@AutoClickAccessibilityService,
+                                "色を取得できません: ${it.message}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    overlay.showEditor()
+                }
+            }
         }
     }
 
@@ -194,7 +334,17 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         if (isActive) resume(value)
     }
 
+    private fun AutomationAction.containsColorCondition(): Boolean = when (this) {
+        is AutomationAction.Tap, is AutomationAction.Swipe -> false
+        is AutomationAction.IfBlock ->
+            conditions.any { it is com.autoclickerplus.model.AutomationCondition.PixelColor } ||
+                thenActions.any { it.containsColorCondition() } ||
+                elseActions.any { it.containsColorCondition() }
+    }
+
     companion object {
+        private const val HOLD_AT_END_MS = 180L
+
         @Volatile
         private var activeService: AutoClickAccessibilityService? = null
 
@@ -210,6 +360,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         fun requestCoordinatePick(actionId: String): Boolean {
             val service = activeService ?: return false
             service.pickCoordinates(actionId)
+            return true
+        }
+
+        fun requestColorPick(ifBlockId: String, conditionId: String): Boolean {
+            val service = activeService ?: return false
+            service.pickColorCondition(ifBlockId, conditionId)
             return true
         }
     }

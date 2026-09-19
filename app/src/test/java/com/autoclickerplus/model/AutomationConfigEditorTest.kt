@@ -1,6 +1,7 @@
 package com.autoclickerplus.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -42,5 +43,69 @@ class AutomationConfigEditorTest {
             1,
             AutomationConfigEditor.setRepeatCount(replaced, -5).repeatCount,
         )
+    }
+
+    @Test
+    fun editsNestedBranchesByStableId() {
+        val block = AutomationAction.IfBlock(id = "if")
+        var config = AutomationConfig(actions = listOf(block))
+        config = AutomationConfigEditor.addToBranch(
+            config,
+            "if",
+            BranchSide.THEN,
+            AutomationAction.Tap(id = "nested"),
+        )
+
+        assertEquals("1-T1", AutomationConfigEditor.sequencePath(config, "nested"))
+        config = AutomationConfigEditor.replace(
+            config,
+            (AutomationConfigEditor.findAction(config, "nested") as AutomationAction.Tap)
+                .copy(waitAfterMs = 900),
+        )
+        assertEquals(
+            900L,
+            (AutomationConfigEditor.findAction(config, "nested") as AutomationAction.Tap)
+                .waitAfterMs,
+        )
+        config = AutomationConfigEditor.remove(config, "nested")
+        assertNull(AutomationConfigEditor.findAction(config, "nested"))
+    }
+
+    @Test
+    fun scriptLibraryAlwaysKeepsOneActiveScript() {
+        var library = ScriptLibrary.default()
+        val originalId = library.activeScriptId
+        library = ScriptLibraryEditor.add(library, "別設定")
+        assertEquals(2, library.scripts.size)
+        assertNotEquals(originalId, library.activeScriptId)
+
+        library = ScriptLibraryEditor.delete(library, library.activeScriptId)
+        assertEquals(1, library.scripts.size)
+        assertEquals(originalId, library.activeScriptId)
+        assertEquals(library, ScriptLibraryEditor.delete(library, originalId))
+    }
+
+    @Test
+    fun legacyConfigBecomesDefaultScriptWithoutLosingActions() {
+        val legacy = AutomationConfig(
+            actions = listOf(AutomationAction.Tap(id = "legacy-tap")),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 3,
+        )
+
+        val migrated = ScriptLibrary.fromLegacy(legacy)
+
+        assertEquals("デフォルト", migrated.activeScript.name)
+        assertEquals("legacy-tap", migrated.activeScript.config.actions.single().id)
+        assertEquals(3, migrated.activeScript.config.repeatCount)
+    }
+
+    @Test
+    fun uniqueNameAddsNumberWhenDuplicated() {
+        val library = ScriptLibrary.default().let {
+            it.copy(scripts = listOf(it.activeScript.copy(name = "テスト")))
+        }
+        assertEquals("テスト (2)", ScriptLibraryEditor.uniqueName(library, "テスト"))
+        assertEquals("別設定", ScriptLibraryEditor.uniqueName(library, "別設定"))
     }
 }
