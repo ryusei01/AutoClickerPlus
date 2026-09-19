@@ -37,19 +37,21 @@ class AutomationRepository(private val context: Context) {
     val config: Flow<AutomationConfig> = library.map { it.activeScript.config }
 
     suspend fun save(config: AutomationConfig) {
-        context.automationDataStore.edit { preferences ->
-            val library = decodeLibrary(preferences)
-            val updated = ScriptLibraryEditor.updateActiveConfig(library) { config }
-            preferences[LIBRARY_KEY] = json.encodeToString(updated)
-            preferences.remove(CONFIG_KEY)
-        }
+        updateLibrary { ScriptLibraryEditor.updateActiveConfig(it) { config } }
     }
 
     suspend fun saveLibrary(library: ScriptLibrary) {
+        updateLibrary { library }
+    }
+
+    suspend fun updateLibrary(transform: (ScriptLibrary) -> ScriptLibrary): ScriptLibrary {
+        var result = ScriptLibrary.default()
         context.automationDataStore.edit { preferences ->
-            preferences[LIBRARY_KEY] = json.encodeToString(library.normalized())
+            result = transform(decodeLibrary(preferences)).normalized()
+            preferences[LIBRARY_KEY] = json.encodeToString(result)
             preferences.remove(CONFIG_KEY)
         }
+        return result
     }
 
     suspend fun migrateLegacyIfNeeded() {

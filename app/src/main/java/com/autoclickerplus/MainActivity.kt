@@ -32,13 +32,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -213,7 +214,17 @@ private fun AutomationScreen(
     val focusManager = LocalFocusManager.current
     val jumpPaths = remember(config) { config.collectActionPaths() }
     Scaffold(
-        topBar = { TopAppBar(title = { Text("AutoClickerPlus") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("AutoClickerPlus") },
+                actions = {
+                    ScriptMenu(
+                        library = library,
+                        onSelect = viewModel::selectScript,
+                    )
+                },
+            )
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -307,6 +318,45 @@ private fun AutomationScreen(
 private enum class IfEditTab { CONDITION, THEN, ELSE }
 
 @Composable
+private fun ScriptMenu(
+    library: ScriptLibrary,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(
+                library.activeScript.name,
+                maxLines = 1,
+            )
+            Text(" ▼")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            library.scripts.forEach { script ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (script.id == library.activeScriptId) {
+                                "✓ ${script.name}"
+                            } else {
+                                script.name
+                            },
+                        )
+                    },
+                    onClick = {
+                        onSelect(script.id)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ScriptSection(
     library: ScriptLibrary,
     viewModel: AutomationViewModel,
@@ -314,32 +364,56 @@ private fun ScriptSection(
     onImport: () -> Unit,
 ) {
     val active = library.activeScript
-    val selectedIndex = library.scripts.indexOfFirst { it.id == active.id }.coerceAtLeast(0)
+    var pickerOpen by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp),
     ) {
-        Column(Modifier.padding(bottom = 10.dp)) {
-            Text(
-                "スクリプト",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp),
-            )
-            ScrollableTabRow(
-                selectedTabIndex = selectedIndex,
-                edgePadding = 8.dp,
-                containerColor = Color.Transparent,
-            ) {
-                library.scripts.forEach { script ->
-                    Tab(
-                        selected = script.id == active.id,
-                        onClick = { viewModel.selectScript(script.id) },
-                        text = { Text(script.name, maxLines = 1) },
+        Column(Modifier.padding(10.dp)) {
+            Text("スクリプト", style = MaterialTheme.typography.titleMedium)
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { pickerOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        active.name,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
                     )
+                    Text("▼")
+                }
+                DropdownMenu(
+                    expanded = pickerOpen,
+                    onDismissRequest = { pickerOpen = false },
+                ) {
+                    library.scripts.forEach { script ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (script.id == active.id) {
+                                        "✓ ${script.name}"
+                                    } else {
+                                        script.name
+                                    },
+                                )
+                            },
+                            onClick = {
+                                viewModel.selectScript(script.id)
+                                pickerOpen = false
+                            },
+                        )
+                    }
                 }
             }
-            Column(Modifier.padding(horizontal = 10.dp)) {
+            Text(
+                "${library.scripts.size} 件から切り替え",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+            )
+            Column {
                 CommitTextField(
                     value = active.name,
                     label = "スクリプト名",

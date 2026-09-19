@@ -41,7 +41,6 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private lateinit var repository: AutomationRepository
     private lateinit var runner: AutomationRunner
     private lateinit var conditionEvaluator: AccessibilityConditionEvaluator
-    private lateinit var scroller: AccessibilityScroller
     private lateinit var overlay: OverlayController
     private val configMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -51,7 +50,6 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         super.onServiceConnected()
         repository = AutomationRepository(applicationContext)
         conditionEvaluator = AccessibilityConditionEvaluator(this)
-        scroller = AccessibilityScroller(this)
         runner = AutomationRunner(
             scope = serviceScope,
             executor = this,
@@ -137,7 +135,8 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         }
         serviceScope.launch {
             repository.migrateLegacyIfNeeded()
-            repository.config.collect { config ->
+            repository.library.collect { library ->
+                val config = library.activeScript.config
                 if (currentConfig != config) runner.stop()
                 currentConfig = config
                 overlay.updateConfig(config)
@@ -170,12 +169,11 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
     override suspend fun scrollToEnd(start: GesturePoint, end: GesturePoint): Boolean {
         overlay.hideTransientOverlays()
-        if (scroller.scrollToEnd(start, end)) return true
-        repeat(FALLBACK_SWIPE_COUNT) { index ->
-            if (!swipe(start, end, FALLBACK_SWIPE_DURATION_MS, false)) {
+        repeat(FULL_SCROLL_SWIPE_COUNT) { index ->
+            if (!swipe(start, end, FULL_SCROLL_SWIPE_DURATION_MS, false)) {
                 return index > 0
             }
-            delay(FALLBACK_SWIPE_GAP_MS)
+            delay(FULL_SCROLL_SWIPE_GAP_MS)
         }
         return true
     }
@@ -402,9 +400,9 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
     companion object {
         private const val HOLD_AT_END_MS = 180L
-        private const val FALLBACK_SWIPE_COUNT = 8
-        private const val FALLBACK_SWIPE_DURATION_MS = 250L
-        private const val FALLBACK_SWIPE_GAP_MS = 40L
+        private const val FULL_SCROLL_SWIPE_COUNT = 8
+        private const val FULL_SCROLL_SWIPE_DURATION_MS = 250L
+        private const val FULL_SCROLL_SWIPE_GAP_MS = 40L
 
         @Volatile
         private var activeService: AutoClickAccessibilityService? = null

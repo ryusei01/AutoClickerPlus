@@ -114,7 +114,7 @@ class AutomationRunnerTest {
     }
 
     @Test
-    fun fullScrollUsesAccessibilityScrollToEnd() = runTest {
+    fun fullScrollUsesRepeatedSwipePath() = runTest {
         val calls = mutableListOf<String>()
         val executor = object : GestureExecutor {
             override suspend fun tap(point: GesturePoint): Boolean = true

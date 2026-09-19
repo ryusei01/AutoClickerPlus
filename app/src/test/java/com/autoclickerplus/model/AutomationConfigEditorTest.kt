@@ -109,6 +109,28 @@ class AutomationConfigEditorTest {
     }
 
     @Test
+    fun selectingAnotherScriptChangesActiveWithoutDroppingOthers() {
+        var library = ScriptLibrary.default()
+        val firstId = library.activeScriptId
+        library = ScriptLibraryEditor.updateActiveConfig(library) {
+            it.copy(actions = listOf(AutomationAction.Tap(id = "tap-a")))
+        }
+        library = ScriptLibraryEditor.add(library, "別設定")
+        val secondId = library.activeScriptId
+        library = ScriptLibraryEditor.updateActiveConfig(library) {
+            it.copy(actions = listOf(AutomationAction.Swipe(id = "swipe-b")))
+        }
+
+        library = ScriptLibraryEditor.select(library, firstId)
+        assertEquals(firstId, library.activeScriptId)
+        assertEquals(2, library.scripts.size)
+        assertEquals("tap-a", library.activeScript.config.actions.single().id)
+
+        library = ScriptLibraryEditor.select(library, secondId)
+        assertEquals("swipe-b", library.activeScript.config.actions.single().id)
+    }
+
+    @Test
     fun legacyConfigBecomesDefaultScriptWithoutLosingActions() {
         val legacy = AutomationConfig(
             actions = listOf(AutomationAction.Tap(id = "legacy-tap")),

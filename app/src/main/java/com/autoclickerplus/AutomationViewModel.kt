@@ -12,26 +12,31 @@ import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.ScriptLibraryEditor
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class AutomationViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = AutomationRepository(application)
-    private val mutableLibrary = MutableStateFlow(ScriptLibrary.default())
-    val library: StateFlow<ScriptLibrary> = mutableLibrary.asStateFlow()
-    private val mutableConfig = MutableStateFlow(mutableLibrary.value.activeScript.config)
-    val config: StateFlow<AutomationConfig> = mutableConfig.asStateFlow()
+
+    val library: StateFlow<ScriptLibrary> = repository.library.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = ScriptLibrary.default(),
+    )
+
+    val config: StateFlow<AutomationConfig> = library
+        .map { it.activeScript.config }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = library.value.activeScript.config,
+        )
 
     init {
-        viewModelScope.launch {
-            repository.migrateLegacyIfNeeded()
-            repository.library.collect {
-                mutableLibrary.value = it
-                mutableConfig.value = it.activeScript.config
-            }
-        }
+        viewModelScope.launch { repository.migrateLegacyIfNeeded() }
     }
 
     fun addTap() = update { AutomationConfigEditor.add(it, AutomationAction.Tap()) }
@@ -95,8 +100,6 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
         }
 
     fun replaceLibrary(library: ScriptLibrary) {
-        mutableLibrary.value = library
-        mutableConfig.value = library.activeScript.config
         viewModelScope.launch { repository.saveLibrary(library) }
     }
 
@@ -107,9 +110,6 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun updateLibrary(transform: (ScriptLibrary) -> ScriptLibrary) {
-        val updated = transform(mutableLibrary.value)
-        mutableLibrary.value = updated
-        mutableConfig.value = updated.activeScript.config
-        viewModelScope.launch { repository.saveLibrary(updated) }
+        viewModelScope.launch { repository.updateLibrary(transform) }
     }
 }
