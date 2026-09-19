@@ -530,6 +530,59 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun jumpOutOfIfDoesNotAddIfBlockWait() = runTest {
+        val waits = mutableListOf<Long>()
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += if (point.x < 50f) "start" else "after"
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> false },
+            wait = { waits += it },
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0, waitAfterMs = 0L, waitJitterMs = 0),
+                AutomationAction.IfBlock(
+                    waitAfterMs = 2_000L,
+                    waitJitterMs = 0,
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(
+                            targetPath = "1",
+                            maxTimes = 1,
+                            waitAfterMs = 80L,
+                            waitJitterMs = 0,
+                        ),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0, waitAfterMs = 0L, waitJitterMs = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(1, waits.count { it == 2_000L })
+        assertEquals(2, waits.count { it == 80L })
+        assertEquals(listOf("start", "start", "after"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun elseJumpSkipsAheadToLaterAction() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(

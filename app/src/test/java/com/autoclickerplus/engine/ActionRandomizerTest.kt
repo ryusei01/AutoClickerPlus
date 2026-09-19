@@ -13,6 +13,7 @@ class ActionRandomizerTest {
         val randomizer = ActionRandomizer(Random(1234))
 
         repeat(1_000) {
+            assertEquals(0L, randomizer.waitMs(0, 30))
             assertTrue(randomizer.waitMs(500, 30) in 470L..530L)
             assertTrue(randomizer.waitMs(10, 30) in 0L..40L)
             assertEquals(500L, randomizer.waitMs(500, 0))

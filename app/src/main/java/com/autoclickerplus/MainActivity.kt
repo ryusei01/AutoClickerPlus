@@ -1344,20 +1344,20 @@ private fun ActionCard(
                     }
                 }
 
-                if (action is AutomationAction.Swipe) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = {
-                            onReplace(action.copy(fullScroll = !action.fullScroll))
-                        }) {
-                            Text(if (action.fullScroll) "端までスクロール: ON" else "端までスクロール: OFF")
-                        }
-                        TextButton(onClick = {
-                            onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
-                        }) {
-                            Text(if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF")
+                    if (action is AutomationAction.Swipe) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = {
+                                onReplace(action.copy(fullScroll = !action.fullScroll))
+                            }) {
+                                Text(if (action.fullScroll) "端までスクロール: ON" else "端までスクロール: OFF")
+                            }
+                            TextButton(onClick = {
+                                onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                            }) {
+                                Text(if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF")
+                            }
                         }
                     }
-                }
 
                 CommitNumberField(
                     value = action.jitterPx.toString(),

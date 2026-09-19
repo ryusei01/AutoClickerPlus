@@ -54,9 +54,11 @@ enum class RunnerState {
 
 class ActionRandomizer(private val random: Random = Random.Default) {
     fun waitMs(baseMs: Long, jitterMs: Int = DEFAULT_TIME_JITTER_MS): Long {
+        val base = baseMs.coerceAtLeast(0L)
+        if (base == 0L) return 0L
         val jitter = jitterMs.coerceAtLeast(0)
-        if (jitter == 0) return baseMs.coerceAtLeast(0L)
-        return (baseMs + random.nextInt(-jitter, jitter + 1)).coerceAtLeast(0L)
+        if (jitter == 0) return base
+        return (base + random.nextInt(-jitter, jitter + 1)).coerceAtLeast(0L)
     }
 
     fun tapPoint(action: AutomationAction.Tap, bounds: ScreenBounds): GesturePoint {
@@ -193,7 +195,10 @@ class AutomationRunner(
         while (index < currentActions.size) {
             val action = currentActions[index]
             val outcome = executeAction(action, rootActions, bounds)
-            wait(randomizer.waitMs(action.waitAfterMs, action.waitJitterMs))
+            val waitAfterJump = outcome is BranchOutcome.Jump && action is AutomationAction.JumpTo
+            if (outcome is BranchOutcome.Continue || waitAfterJump) {
+                wait(randomizer.waitMs(action.waitAfterMs, action.waitJitterMs))
+            }
             when (outcome) {
                 BranchOutcome.Continue -> index++
                 is BranchOutcome.Jump -> {
