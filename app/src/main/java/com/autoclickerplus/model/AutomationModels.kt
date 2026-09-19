@@ -44,6 +44,8 @@ sealed class AutomationAction {
         val elseActions: List<AutomationAction> = emptyList(),
         val thenJumpTo: Int? = null,
         val elseJumpTo: Int? = null,
+        val thenWaitMs: Long = 0L,
+        val elseWaitMs: Long = 0L,
         override val waitAfterMs: Long = 0L,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
@@ -52,6 +54,15 @@ sealed class AutomationAction {
     @SerialName("break_loop")
     data class BreakLoop(
         override val id: String = UUID.randomUUID().toString(),
+        override val waitAfterMs: Long = 0L,
+        override val jitterPx: Int = 3,
+    ) : AutomationAction()
+
+    @Serializable
+    @SerialName("wait")
+    data class Wait(
+        override val id: String = UUID.randomUUID().toString(),
+        val durationMs: Long = 1_000L,
         override val waitAfterMs: Long = 0L,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
@@ -185,6 +196,8 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         elseActions = elseActions.map(AutomationAction::normalized),
         thenJumpTo = thenJumpTo.normalizedJump(),
         elseJumpTo = elseJumpTo.normalizedJump(),
+        thenWaitMs = thenWaitMs.coerceAtLeast(0L),
+        elseWaitMs = elseWaitMs.coerceAtLeast(0L),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
         jitterPx = 3,
     )
@@ -192,6 +205,23 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         waitAfterMs = 0L,
         jitterPx = 3,
     )
+    is AutomationAction.Wait -> copy(
+        durationMs = durationMs.coerceIn(0L, MAX_WAIT_MS),
+        waitAfterMs = 0L,
+        jitterPx = 3,
+    )
+}
+
+const val MAX_WAIT_MS = 3_600_000L
+
+fun formatWaitSeconds(durationMs: Long): String {
+    if (durationMs % 1_000L == 0L) return (durationMs / 1_000L).toString()
+    return (durationMs / 1_000.0).toString().trimEnd('0').trimEnd('.')
+}
+
+fun parseWaitSeconds(text: String): Long? {
+    val seconds = text.trim().toDoubleOrNull() ?: return null
+    return (seconds * 1_000.0).toLong().coerceIn(0L, MAX_WAIT_MS)
 }
 
 fun Int?.normalizedJump(): Int? = this?.takeIf { it >= 1 }

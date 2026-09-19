@@ -526,6 +526,81 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun waitActionPausesConfiguredSeconds() = runTest {
+        val waits = mutableListOf<Long>()
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += "tap"
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            randomizer = ActionRandomizer(Random(1)),
+            wait = { waits += it },
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Wait(durationMs = 2_000L),
+                AutomationAction.Tap(waitAfterMs = 0L, jitterPx = 3),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("tap"), calls)
+        assertTrue(waits.first() in 1_970L..2_030L)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun thenContinueWaitsConfiguredDelay() = runTest {
+        val waits = mutableListOf<Long>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint) = true
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            randomizer = ActionRandomizer(Random(1)),
+            wait = { waits += it },
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(thenWaitMs = 400L, waitAfterMs = 0L),
+                AutomationAction.Tap(waitAfterMs = 0L, jitterPx = 3),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertTrue(waits.any { it in 370L..430L })
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun invalidJumpContinuesToNextAction() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(

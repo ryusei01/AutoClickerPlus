@@ -76,6 +76,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                     }
                     overlay.showEditor()
                 },
+                onAddWait = {
+                    mutateConfig {
+                        AutomationConfigEditor.add(it, AutomationAction.Wait())
+                    }
+                    overlay.showEditor()
+                },
                 onAddToBranch = { blockId, side, action ->
                     addToBranchAndMaybePick(blockId, side, action)
                 },
@@ -342,7 +348,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
     private fun AutomationAction.containsColorCondition(): Boolean = when (this) {
         is AutomationAction.Tap, is AutomationAction.Swipe -> false
-        is AutomationAction.BreakLoop -> false
+        is AutomationAction.BreakLoop, is AutomationAction.Wait -> false
         is AutomationAction.IfBlock ->
             conditions.any { it is com.autoclickerplus.model.AutomationCondition.PixelColor } ||
                 thenActions.any { it.containsColorCondition() } ||

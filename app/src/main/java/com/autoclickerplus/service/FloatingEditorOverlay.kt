@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -30,7 +31,9 @@ import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.formatWaitSeconds
 import com.autoclickerplus.model.jumpTargetLabel
+import com.autoclickerplus.model.parseWaitSeconds
 import kotlin.math.roundToInt
 
 data class FloatingEditorCallbacks(
@@ -38,6 +41,7 @@ data class FloatingEditorCallbacks(
     val onAddSwipe: () -> Unit,
     val onAddIf: () -> Unit,
     val onAddBreak: () -> Unit,
+    val onAddWait: () -> Unit,
     val onAddToBranch: (String, BranchSide, AutomationAction) -> Unit,
     val onReplace: (AutomationAction) -> Unit,
     val onAddCondition: (String, AutomationCondition) -> Unit,
@@ -63,6 +67,7 @@ class FloatingEditorOverlay(
     private var params: WindowManager.LayoutParams? = null
     private var config = AutomationConfig()
     private val expandedDetailIds = mutableSetOf<String>()
+    private var rendering = false
 
     val isVisible: Boolean get() = root != null
 
@@ -135,6 +140,16 @@ class FloatingEditorOverlay(
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
         makeDraggable(header.getChildAt(0), panel, windowParams)
+        panel.isFocusableInTouchMode = true
+        panel.setOnTouchListener { view, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                val focused = view.findFocus()
+                if (focused is EditText && !touchInside(focused, event.rawX, event.rawY)) {
+                    commitFocusedField()
+                }
+            }
+            false
+        }
         windowManager.addView(panel, windowParams)
         root = panel
         content = body
@@ -144,10 +159,11 @@ class FloatingEditorOverlay(
 
     fun updateConfig(config: AutomationConfig) {
         this.config = config
-        if (isVisible && root?.findFocus() !is EditText) render()
+        if (isVisible && !rendering && root?.findFocus() !is EditText) render()
     }
 
     fun hide() {
+        commitFocusedField()
         root?.let { runCatching { windowManager.removeView(it) } }
         root = null
         content = null
@@ -156,6 +172,17 @@ class FloatingEditorOverlay(
 
     private fun render() {
         val body = content ?: return
+        if (rendering) return
+        rendering = true
+        try {
+            commitFocusedField()
+            renderBody(body)
+        } finally {
+            rendering = false
+        }
+    }
+
+    private fun renderBody(body: LinearLayout) {
         body.removeAllViews()
         body.addView(addButtons())
         body.addView(repeatControls())
@@ -180,6 +207,10 @@ class FloatingEditorOverlay(
         addView(LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(actionButton(R.drawable.ic_edit, "IF", callbacks.onAddIf), rowButtonParams())
+            addView(actionButton(R.drawable.ic_wait, "待機", callbacks.onAddWait), rowButtonParams())
+        })
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
             addView(actionButton(R.drawable.ic_break, "ループ終了", callbacks.onAddBreak), rowButtonParams())
         })
     }
@@ -225,6 +256,7 @@ class FloatingEditorOverlay(
     ): View = when (action) {
         is AutomationAction.IfBlock -> ifEditor(path, index, siblingCount, action)
         is AutomationAction.BreakLoop -> breakEditor(path, index, siblingCount, action)
+        is AutomationAction.Wait -> waitEditor(path, index, siblingCount, action)
         else -> LinearLayout(service).apply {
             val expanded = action.id in expandedDetailIds
             val nodeColor = if (action is AutomationAction.Tap) {
@@ -297,6 +329,34 @@ class FloatingEditorOverlay(
         addView(flowNodeHeader(path, action, expanded, index, siblingCount))
         if (expanded) {
             addView(label("この操作に到達すると繰り返しを終了します"))
+        }
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { setMargins(0, dp(2), 0, dp(2)) }
+    }
+
+    private fun waitEditor(
+        path: String,
+        index: Int,
+        siblingCount: Int,
+        action: AutomationAction.Wait,
+    ) = LinearLayout(service).apply {
+        val expanded = action.id in expandedDetailIds
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        background = roundedBackground(0xFF3D4A5C.toInt(), dp(12).toFloat())
+        addView(flowNodeHeader(path, action, expanded, index, siblingCount))
+        if (expanded) {
+            addView(numberField(
+                "待機 秒",
+                formatWaitSeconds(action.durationMs),
+                decimal = true,
+            ) { value ->
+                parseWaitSeconds(value)?.let { ms ->
+                    callbacks.onReplace(action.copy(durationMs = ms))
+                }
+            })
         }
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -443,6 +503,7 @@ class FloatingEditorOverlay(
     ) = LinearLayout(service).apply {
         val actions = if (side == BranchSide.THEN) block.thenActions else block.elseActions
         val jumpTo = if (side == BranchSide.THEN) block.thenJumpTo else block.elseJumpTo
+        val waitMs = if (side == BranchSide.THEN) block.thenWaitMs else block.elseWaitMs
         val ownerNumber = pathPrefix.takeWhile { it.isDigit() }.toIntOrNull() ?: 1
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(6), 0, dp(6))
@@ -467,6 +528,9 @@ class FloatingEditorOverlay(
             })
             addView(smallButton("+終了", true) {
                 callbacks.onAddToBranch(block.id, side, AutomationAction.BreakLoop())
+            })
+            addView(smallButton("+待機", true) {
+                callbacks.onAddToBranch(block.id, side, AutomationAction.Wait())
             })
         })
         addView(flowArrow())
@@ -495,6 +559,17 @@ class FloatingEditorOverlay(
                 )
             })
         }
+        addView(numberField("このあと待機 ms（±30）", waitMs.toString()) { value ->
+            value.toLongOrNull()?.let { wait ->
+                callbacks.onReplace(
+                    if (side == BranchSide.THEN) {
+                        block.copy(thenWaitMs = wait.coerceAtLeast(0L))
+                    } else {
+                        block.copy(elseWaitMs = wait.coerceAtLeast(0L))
+                    },
+                )
+            }
+        })
         addView(label("今より小さい番号は戻り、大きい番号は先へ進みます"))
     }
 
@@ -527,12 +602,29 @@ class FloatingEditorOverlay(
     }
 
     private fun toggleExpanded(id: String) {
+        commitFocusedField()
         if (id in expandedDetailIds) {
             expandedDetailIds -= id
         } else {
             expandedDetailIds += id
         }
         render()
+    }
+
+    private fun commitFocusedField() {
+        val field = root?.findFocus() as? EditText ?: return
+        field.clearFocus()
+        service.getSystemService(InputMethodManager::class.java)
+            ?.hideSoftInputFromWindow(field.windowToken, 0)
+    }
+
+    private fun touchInside(view: View, rawX: Float, rawY: Float): Boolean {
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return rawX >= location[0] &&
+            rawX < location[0] + view.width &&
+            rawY >= location[1] &&
+            rawY < location[1] + view.height
     }
 
     private fun flowArrow() = TextView(service).apply {
@@ -556,11 +648,17 @@ class FloatingEditorOverlay(
     private fun numberField(
         labelText: String,
         value: String,
+        decimal: Boolean = false,
         onCommit: (String) -> Unit,
     ) = LinearLayout(service).apply {
         orientation = LinearLayout.VERTICAL
         addView(label(labelText))
-        addView(commitField(value, InputType.TYPE_CLASS_NUMBER, onCommit).apply {
+        val type = if (decimal) {
+            InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        } else {
+            InputType.TYPE_CLASS_NUMBER
+        }
+        addView(commitField(value, type, onCommit).apply {
             hint = "数値を入力"
             setHintTextColor(0xFFBBBBBB.toInt())
             setSelectAllOnFocus(true)
@@ -602,7 +700,10 @@ class FloatingEditorOverlay(
             this.text = text
             setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
             compoundDrawablePadding = dp(6)
-            setOnClickListener { onClick() }
+            setOnClickListener {
+                commitFocusedField()
+                onClick()
+            }
         }
 
     private fun iconButton(icon: Int, description: String, onClick: () -> Unit) =
@@ -611,7 +712,10 @@ class FloatingEditorOverlay(
             contentDescription = description
             setBackgroundColor(Color.TRANSPARENT)
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            setOnClickListener { onClick() }
+            setOnClickListener {
+                commitFocusedField()
+                onClick()
+            }
             layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
         }
 
@@ -622,7 +726,10 @@ class FloatingEditorOverlay(
             minWidth = 0
             minimumWidth = 0
             setPadding(dp(8), 0, dp(8), 0)
-            setOnClickListener { onClick() }
+            setOnClickListener {
+                commitFocusedField()
+                onClick()
+            }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 dp(44),
@@ -644,6 +751,7 @@ class FloatingEditorOverlay(
                 "(${action.endX.roundToInt()}, ${action.endY.roundToInt()})"
         is AutomationAction.IfBlock -> "条件分岐"
         is AutomationAction.BreakLoop -> "ループ終了"
+        is AutomationAction.Wait -> "${formatWaitSeconds(action.durationMs)}秒"
     }
 
     private fun makeDraggable(
@@ -684,6 +792,7 @@ class FloatingEditorOverlay(
         is AutomationAction.Swipe -> copy(waitAfterMs = value.coerceAtLeast(0L))
         is AutomationAction.IfBlock -> copy(waitAfterMs = value.coerceAtLeast(0L))
         is AutomationAction.BreakLoop -> this
+        is AutomationAction.Wait -> this
     }
 
     private fun AutomationAction.withJitter(value: Int): AutomationAction = when (this) {
@@ -691,6 +800,7 @@ class FloatingEditorOverlay(
         is AutomationAction.Swipe -> copy(jitterPx = value.coerceIn(3, 10))
         is AutomationAction.IfBlock -> this
         is AutomationAction.BreakLoop -> this
+        is AutomationAction.Wait -> this
     }
 
     private fun TextMatchMode.toggled() =

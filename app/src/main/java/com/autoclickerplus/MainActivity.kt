@@ -11,6 +11,7 @@ import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,7 +63,9 @@ import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.formatWaitSeconds
 import com.autoclickerplus.model.jumpTargetLabel
+import com.autoclickerplus.model.parseWaitSeconds
 import com.autoclickerplus.model.summary
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
@@ -194,6 +198,7 @@ private fun AutomationScreen(
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     Scaffold(
         topBar = { TopAppBar(title = { Text("AutoClickerPlus") }) },
     ) { padding ->
@@ -201,7 +206,11 @@ private fun AutomationScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                ) { focusManager.clearFocus() },
         ) {
             ScriptSection(library, viewModel, onExport, onImport)
             ServiceSection(serviceConnected, onOpenAccessibility, onShowControls)
@@ -236,7 +245,7 @@ private fun AutomationScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
+                    .padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Button(onClick = viewModel::addTap, modifier = Modifier.weight(1f)) {
@@ -247,6 +256,16 @@ private fun AutomationScreen(
                 }
                 Button(onClick = viewModel::addIf, modifier = Modifier.weight(1f)) {
                     Text("IF")
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(onClick = viewModel::addWait, modifier = Modifier.weight(1f)) {
+                    Text("待機")
                 }
                 Button(onClick = viewModel::addBreak, modifier = Modifier.weight(1f)) {
                     Text("ループ終了")
@@ -264,7 +283,6 @@ private fun ScriptSection(
     onImport: () -> Unit,
 ) {
     val active = library.activeScript
-    var scriptName by remember(active.id, active.name) { mutableStateOf(active.name) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -285,21 +303,12 @@ private fun ScriptSection(
                     }
                 }
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                OutlinedTextField(
-                    value = scriptName,
-                    onValueChange = { scriptName = it },
-                    label = { Text("スクリプト名") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = { viewModel.renameActiveScript(scriptName) }) {
-                    Text("保存")
-                }
-            }
+            CommitTextField(
+                value = active.name,
+                label = "スクリプト名",
+                modifier = Modifier.fillMaxWidth(),
+                onCommit = { viewModel.renameActiveScript(it) },
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -463,6 +472,7 @@ private fun CommitNumberField(
     value: String,
     label: String,
     modifier: Modifier = Modifier,
+    decimal: Boolean = false,
     onCommit: (String) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
@@ -471,13 +481,18 @@ private fun CommitNumberField(
     if (!focused && text != value) {
         text = value
     }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (focused) onCommit(text)
+        }
+    }
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
         label = { Text(label) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Number,
+            keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,
             imeAction = ImeAction.Done,
         ),
         keyboardActions = KeyboardActions(onDone = {
@@ -506,6 +521,11 @@ private fun CommitTextField(
     var focused by remember { mutableStateOf(false) }
     if (!focused && text != value) {
         text = value
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (focused) onCommit(text)
+        }
     }
     OutlinedTextField(
         value = text,
@@ -549,6 +569,16 @@ private fun ActionTreeCard(
             onMoveUp = { viewModel.move(action.id, -1) },
             onMoveDown = { viewModel.move(action.id, 1) },
             onPickCoordinates = { onPickCoordinates(action.id) },
+        )
+        is AutomationAction.Wait -> WaitCard(
+            path = path,
+            action = action,
+            canMoveUp = canMoveUp,
+            canMoveDown = canMoveDown,
+            onReplace = viewModel::replace,
+            onRemove = { viewModel.remove(action.id) },
+            onMoveUp = { viewModel.move(action.id, -1) },
+            onMoveDown = { viewModel.move(action.id, 1) },
         )
         is AutomationAction.BreakLoop -> BreakLoopCard(
             path = path,
@@ -654,11 +684,13 @@ private fun IfBlockCard(
                     pathPrefix = "$path-T",
                     actions = block.thenActions,
                     jumpTo = block.thenJumpTo,
+                    waitMs = block.thenWaitMs,
                     rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.THEN,
                     viewModel = viewModel,
                     onJumpToChange = { viewModel.replace(block.copy(thenJumpTo = it)) },
+                    onWaitChange = { viewModel.replace(block.copy(thenWaitMs = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -667,11 +699,13 @@ private fun IfBlockCard(
                     pathPrefix = "$path-E",
                     actions = block.elseActions,
                     jumpTo = block.elseJumpTo,
+                    waitMs = block.elseWaitMs,
                     rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.ELSE,
                     viewModel = viewModel,
                     onJumpToChange = { viewModel.replace(block.copy(elseJumpTo = it)) },
+                    onWaitChange = { viewModel.replace(block.copy(elseWaitMs = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -784,11 +818,13 @@ private fun BranchEditor(
     pathPrefix: String,
     actions: List<AutomationAction>,
     jumpTo: Int?,
+    waitMs: Long,
     rootNumber: Int,
     blockId: String,
     side: BranchSide,
     viewModel: AutomationViewModel,
     onJumpToChange: (Int?) -> Unit,
+    onWaitChange: (Long) -> Unit,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
@@ -837,6 +873,9 @@ private fun BranchEditor(
             TextButton(onClick = {
                 viewModel.addToBranch(blockId, side, AutomationAction.BreakLoop())
             }) { Text("+終了") }
+            TextButton(onClick = {
+                viewModel.addToBranch(blockId, side, AutomationAction.Wait())
+            }) { Text("+待機") }
         }
         FlowArrow()
         Text(
@@ -863,6 +902,14 @@ private fun BranchEditor(
                 )
             }
         }
+        CommitNumberField(
+            value = waitMs.toString(),
+            label = "このあと待機 ms (±30)",
+            modifier = Modifier.fillMaxWidth(),
+            onCommit = { value ->
+                value.toLongOrNull()?.let { onWaitChange(it.coerceAtLeast(0L)) }
+            },
+        )
         Text(
             "今より小さい番号は戻り、大きい番号は先へ進みます",
             style = MaterialTheme.typography.bodySmall,
@@ -889,6 +936,52 @@ private val Boolean?.expectedLabel: String
         true -> "true"
         false -> "false"
     }
+
+@Composable
+private fun WaitCard(
+    path: String,
+    action: AutomationAction.Wait,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onReplace: (AutomationAction) -> Unit,
+    onRemove: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    var expanded by remember(action.id) { mutableStateOf(true) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            FlowNodeHeader(
+                path = path,
+                title = action.flowTitle(),
+                summary = action.flowSummary(),
+                expanded = expanded,
+                accent = Color(0xFF4A5568),
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onToggle = { expanded = !expanded },
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+                onRemove = onRemove,
+            )
+            if (expanded) {
+                CommitNumberField(
+                    value = formatWaitSeconds(action.durationMs),
+                    label = "待機 秒（小数可）",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    decimal = true,
+                    onCommit = { value ->
+                        parseWaitSeconds(value)?.let { ms ->
+                            onReplace(action.copy(durationMs = ms))
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun BreakLoopCard(
@@ -1021,6 +1114,7 @@ private fun AutomationAction.withWait(waitMs: Long): AutomationAction = when (th
     is AutomationAction.Swipe -> copy(waitAfterMs = waitMs.coerceAtLeast(0L))
     is AutomationAction.IfBlock -> copy(waitAfterMs = waitMs.coerceAtLeast(0L))
     is AutomationAction.BreakLoop -> this
+    is AutomationAction.Wait -> this
 }
 
 private fun AutomationAction.withJitter(jitterPx: Int): AutomationAction = when (this) {
@@ -1028,4 +1122,5 @@ private fun AutomationAction.withJitter(jitterPx: Int): AutomationAction = when 
     is AutomationAction.Swipe -> copy(jitterPx = jitterPx.coerceIn(3, 10))
     is AutomationAction.IfBlock -> this
     is AutomationAction.BreakLoop -> this
+    is AutomationAction.Wait -> this
 }

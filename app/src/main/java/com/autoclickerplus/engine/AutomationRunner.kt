@@ -229,12 +229,15 @@ class AutomationRunner(
                 if (branchOutcome is BranchOutcome.Jump) {
                     return branchOutcome
                 }
+                val exitWait = if (matched) action.thenWaitMs else action.elseWaitMs
+                wait(randomizer.waitMs(exitWait))
                 val destination = if (matched) action.thenJumpTo else action.elseJumpTo
                 if (destination != null && destination >= 1) {
                     return BranchOutcome.Jump(destination)
                 }
             }
             is AutomationAction.BreakLoop -> throw LoopBreakException()
+            is AutomationAction.Wait -> wait(randomizer.waitMs(action.durationMs))
         }
         return BranchOutcome.Continue
     }
