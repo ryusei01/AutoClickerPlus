@@ -9,8 +9,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,10 +21,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -43,11 +49,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
+import com.autoclickerplus.model.flowSummary
+import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.summary
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
@@ -192,7 +206,7 @@ private fun AutomationScreen(
             ServiceSection(serviceConnected, onOpenAccessibility, onShowControls)
             RepeatSection(config, viewModel)
             Text(
-                text = "アクション（上から順に実行）",
+                text = "フロー（上から順に実行）",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
             )
@@ -201,15 +215,20 @@ private fun AutomationScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 itemsIndexed(config.actions, key = { _, action -> action.id }) { index, action ->
-                    ActionTreeCard(
-                        path = "${index + 1}",
-                        action = action,
-                        canMoveUp = index > 0,
-                        canMoveDown = index < config.actions.lastIndex,
-                        viewModel = viewModel,
-                        onPickCoordinates = onPickCoordinates,
-                        onPickColor = onPickColor,
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        ActionTreeCard(
+                            path = "${index + 1}",
+                            action = action,
+                            canMoveUp = index > 0,
+                            canMoveDown = index < config.actions.lastIndex,
+                            viewModel = viewModel,
+                            onPickCoordinates = onPickCoordinates,
+                            onPickColor = onPickColor,
+                        )
+                        if (index < config.actions.lastIndex) {
+                            FlowArrow()
+                        }
+                    }
                 }
             }
             Row(
@@ -344,21 +363,166 @@ private fun RepeatSection(config: AutomationConfig, viewModel: AutomationViewMod
             )
             Text("回数指定")
             if (config.repeatMode == RepeatMode.COUNT) {
-                OutlinedTextField(
+                CommitNumberField(
                     value = config.repeatCount.toString(),
-                    onValueChange = { value ->
-                        value.toIntOrNull()?.let(viewModel::setRepeatCount)
-                    },
-                    label = { Text("回") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = "回",
                     modifier = Modifier
                         .padding(start = 8.dp)
                         .weight(1f),
+                    onCommit = { value ->
+                        value.toIntOrNull()?.let(viewModel::setRepeatCount)
+                    },
                 )
             }
         }
     }
+}
+
+@Composable
+private fun FlowArrow() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .width(2.dp)
+                .height(10.dp)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+        )
+        Text(
+            "▼",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+@Composable
+private fun FlowNodeHeader(
+    path: String,
+    title: String,
+    summary: String,
+    expanded: Boolean,
+    accent: Color,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onToggle: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(accent)
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                path,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+            )
+        }
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(start = 10.dp)
+                .clickable(onClick = onToggle),
+        ) {
+            Text(
+                "$title  ${if (expanded) "▲ 詳細" else "▼ 詳細"}",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("↑") }
+        TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("↓") }
+        TextButton(onClick = onRemove) { Text("削除") }
+    }
+}
+
+@Composable
+private fun CommitNumberField(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    onCommit: (String) -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    var text by remember { mutableStateOf(value) }
+    var focused by remember { mutableStateOf(false) }
+    if (!focused && text != value) {
+        text = value
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Number,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(onDone = {
+            onCommit(text)
+            focusManager.clearFocus()
+        }),
+        modifier = modifier.onFocusChanged { state ->
+            val wasFocused = focused
+            focused = state.isFocused
+            if (wasFocused && !state.isFocused) {
+                onCommit(text)
+            }
+        },
+    )
+}
+
+@Composable
+private fun CommitTextField(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    onCommit: (String) -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    var text by remember { mutableStateOf(value) }
+    var focused by remember { mutableStateOf(false) }
+    if (!focused && text != value) {
+        text = value
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = {
+            onCommit(text)
+            focusManager.clearFocus()
+        }),
+        modifier = modifier.onFocusChanged { state ->
+            val wasFocused = focused
+            focused = state.isFocused
+            if (wasFocused && !state.isFocused) {
+                onCommit(text)
+            }
+        },
+    )
 }
 
 @Composable
@@ -414,89 +578,92 @@ private fun IfBlockCard(
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
-    var expanded by remember(block.id) { mutableStateOf(true) }
+    var expanded by remember(block.id) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("IF $path", style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f))
-                TextButton(
-                    onClick = {
-                        viewModel.replace(
-                            block.copy(
-                                operator = if (block.operator == ConditionOperator.AND) {
-                                    ConditionOperator.OR
-                                } else {
-                                    ConditionOperator.AND
-                                },
-                            ),
-                        )
-                    },
-                ) { Text(block.operator.name) }
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "閉じる" else "開く")
-                }
-                TextButton(onClick = { viewModel.move(block.id, -1) }, enabled = canMoveUp) {
-                    Text("↑")
-                }
-                TextButton(onClick = { viewModel.move(block.id, 1) }, enabled = canMoveDown) {
-                    Text("↓")
-                }
-                TextButton(onClick = { viewModel.remove(block.id) }) { Text("削除") }
-            }
-            OutlinedTextField(
-                value = block.waitAfterMs.toString(),
-                onValueChange = { value ->
-                    value.toLongOrNull()?.let { wait ->
-                        viewModel.replace(block.copy(waitAfterMs = wait.coerceAtLeast(0L)))
-                    }
-                },
-                label = { Text("次の動作までの待機時間 ms (±30)") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
+            FlowNodeHeader(
+                path = path,
+                title = "IF",
+                summary = block.flowSummary(),
+                expanded = expanded,
+                accent = Color(0xFF6A4C93),
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onToggle = { expanded = !expanded },
+                onMoveUp = { viewModel.move(block.id, -1) },
+                onMoveDown = { viewModel.move(block.id, 1) },
+                onRemove = { viewModel.remove(block.id) },
             )
             if (expanded) {
-            Text("条件", style = MaterialTheme.typography.titleSmall)
-            block.conditions.forEach { condition ->
-                ConditionEditor(
-                    condition = condition,
-                    onReplace = { viewModel.replaceCondition(block.id, it) },
-                    onRemove = { viewModel.removeCondition(block.id, condition.id) },
-                    onPickColor = { onPickColor(block.id, condition.id) },
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Text("条件の結び", style = MaterialTheme.typography.bodySmall)
+                    TextButton(
+                        onClick = {
+                            viewModel.replace(
+                                block.copy(
+                                    operator = if (block.operator == ConditionOperator.AND) {
+                                        ConditionOperator.OR
+                                    } else {
+                                        ConditionOperator.AND
+                                    },
+                                ),
+                            )
+                        },
+                    ) { Text(block.operator.name) }
+                }
+                CommitNumberField(
+                    value = block.waitAfterMs.toString(),
+                    label = "次の動作までの待機時間 ms (±30)",
+                    modifier = Modifier.fillMaxWidth(),
+                    onCommit = { value ->
+                        value.toLongOrNull()?.let { wait ->
+                            viewModel.replace(block.copy(waitAfterMs = wait.coerceAtLeast(0L)))
+                        }
+                    },
                 )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = {
-                    viewModel.addCondition(block.id, AutomationCondition.TextExists())
-                }) { Text("+文字") }
-                TextButton(onClick = {
-                    viewModel.addCondition(block.id, AutomationCondition.UiState())
-                }) { Text("+活性") }
-                TextButton(onClick = {
-                    viewModel.addCondition(block.id, AutomationCondition.PixelColor())
-                }) { Text("+色") }
-            }
-            BranchEditor(
-                title = "THEN",
-                pathPrefix = "$path-T",
-                actions = block.thenActions,
-                blockId = block.id,
-                side = BranchSide.THEN,
-                viewModel = viewModel,
-                onPickCoordinates = onPickCoordinates,
-                onPickColor = onPickColor,
-            )
-            BranchEditor(
-                title = "ELSE",
-                pathPrefix = "$path-E",
-                actions = block.elseActions,
-                blockId = block.id,
-                side = BranchSide.ELSE,
-                viewModel = viewModel,
-                onPickCoordinates = onPickCoordinates,
-                onPickColor = onPickColor,
-            )
+                Text("条件", style = MaterialTheme.typography.titleSmall)
+                block.conditions.forEach { condition ->
+                    ConditionEditor(
+                        condition = condition,
+                        onReplace = { viewModel.replaceCondition(block.id, it) },
+                        onRemove = { viewModel.removeCondition(block.id, condition.id) },
+                        onPickColor = { onPickColor(block.id, condition.id) },
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        viewModel.addCondition(block.id, AutomationCondition.TextExists())
+                    }) { Text("+文字") }
+                    TextButton(onClick = {
+                        viewModel.addCondition(block.id, AutomationCondition.UiState())
+                    }) { Text("+活性") }
+                    TextButton(onClick = {
+                        viewModel.addCondition(block.id, AutomationCondition.PixelColor())
+                    }) { Text("+色") }
+                }
+                BranchEditor(
+                    title = "THEN",
+                    pathPrefix = "$path-T",
+                    actions = block.thenActions,
+                    blockId = block.id,
+                    side = BranchSide.THEN,
+                    viewModel = viewModel,
+                    onPickCoordinates = onPickCoordinates,
+                    onPickColor = onPickColor,
+                )
+                BranchEditor(
+                    title = "ELSE",
+                    pathPrefix = "$path-E",
+                    actions = block.elseActions,
+                    blockId = block.id,
+                    side = BranchSide.ELSE,
+                    viewModel = viewModel,
+                    onPickCoordinates = onPickCoordinates,
+                    onPickColor = onPickColor,
+                )
             }
         }
     }
@@ -512,35 +679,30 @@ private fun ConditionEditor(
     Column(Modifier.padding(start = 8.dp, bottom = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                when (condition) {
-                    is AutomationCondition.TextExists -> "文字存在"
-                    is AutomationCondition.UiState -> "活性状態"
-                    is AutomationCondition.PixelColor -> "画面色"
-                },
+                condition.summary(),
                 modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
             )
             TextButton(onClick = onRemove) { Text("条件削除") }
         }
         when (condition) {
             is AutomationCondition.TextExists -> {
-                OutlinedTextField(
+                CommitTextField(
                     value = condition.query,
-                    onValueChange = { onReplace(condition.copy(query = it)) },
-                    label = { Text("検索文字") },
-                    singleLine = true,
+                    label = "検索文字",
                     modifier = Modifier.fillMaxWidth(),
+                    onCommit = { onReplace(condition.copy(query = it)) },
                 )
                 TextButton(onClick = {
                     onReplace(condition.copy(matchMode = condition.matchMode.toggled()))
                 }) { Text("一致方法: ${condition.matchMode.label}") }
             }
             is AutomationCondition.UiState -> {
-                OutlinedTextField(
+                CommitTextField(
                     value = condition.query,
-                    onValueChange = { onReplace(condition.copy(query = it)) },
-                    label = { Text("対象文字") },
-                    singleLine = true,
+                    label = "対象文字",
                     modifier = Modifier.fillMaxWidth(),
+                    onCommit = { onReplace(condition.copy(query = it)) },
                 )
                 Row {
                     TextButton(onClick = {
@@ -563,47 +725,42 @@ private fun ConditionEditor(
                     Text("画面から色を取得")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
+                    CommitNumberField(
                         value = condition.x.toString(),
-                        onValueChange = { value ->
+                        label = "X",
+                        modifier = Modifier.weight(1f),
+                        onCommit = { value ->
                             value.toIntOrNull()?.let { onReplace(condition.copy(x = it)) }
                         },
-                        label = { Text("X") },
-                        modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
-                    OutlinedTextField(
+                    CommitNumberField(
                         value = condition.y.toString(),
-                        onValueChange = { value ->
+                        label = "Y",
+                        modifier = Modifier.weight(1f),
+                        onCommit = { value ->
                             value.toIntOrNull()?.let { onReplace(condition.copy(y = it)) }
                         },
-                        label = { Text("Y") },
-                        modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
                 }
-                OutlinedTextField(
+                CommitTextField(
                     value = String.format("#%08X", condition.argb),
-                    onValueChange = { value ->
+                    label = "ARGB色",
+                    modifier = Modifier.fillMaxWidth(),
+                    onCommit = { value ->
                         value.removePrefix("#").toLongOrNull(16)?.let {
                             onReplace(condition.copy(argb = it.toInt()))
                         }
                     },
-                    label = { Text("ARGB色") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                CommitNumberField(
                     value = condition.tolerance.toString(),
-                    onValueChange = { value ->
+                    label = "色の許容差 0～255",
+                    modifier = Modifier.fillMaxWidth(),
+                    onCommit = { value ->
                         value.toIntOrNull()?.let {
                             onReplace(condition.copy(tolerance = it.coerceIn(0, 255)))
                         }
                     },
-                    label = { Text("色の許容差 0～255") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -621,9 +778,27 @@ private fun BranchEditor(
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
-    Column(Modifier.padding(start = 12.dp, top = 8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall)
+    Column(
+        Modifier
+            .padding(start = 8.dp, top = 10.dp)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(10.dp),
+            )
+            .padding(8.dp),
+    ) {
+        Text("◆ $title", style = MaterialTheme.typography.titleSmall)
+        if (actions.isEmpty()) {
+            Text(
+                "（空）",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         actions.forEachIndexed { index, child ->
+            if (index > 0) {
+                FlowArrow()
+            }
             ActionTreeCard(
                 path = "$pathPrefix${index + 1}",
                 action = child,
@@ -680,19 +855,29 @@ private fun BreakLoopCard(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
 ) {
+    var expanded by remember(action.id) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowNodeHeader(
+                path = path,
+                title = action.flowTitle(),
+                summary = action.flowSummary(),
+                expanded = expanded,
+                accent = Color(0xFFB5651D),
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onToggle = { expanded = !expanded },
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+                onRemove = onRemove,
+            )
+            if (expanded) {
                 Text(
-                    "$path. ループ終了",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
+                    "この操作に到達すると繰り返しを終了します",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
-                TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("↑") }
-                TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("↓") }
-                TextButton(onClick = onRemove) { Text("削除") }
             }
-            Text("この操作に到達すると繰り返しを終了します")
         }
     }
 }
@@ -709,79 +894,79 @@ private fun ActionCard(
     onMoveDown: () -> Unit,
     onPickCoordinates: () -> Unit,
 ) {
+    var expanded by remember(action.id) { mutableStateOf(false) }
+    val accent = if (action is AutomationAction.Tap) {
+        Color(0xFF2E86AB)
+    } else {
+        Color(0xFF2A9D8F)
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "$path. ${if (action is AutomationAction.Tap) "タップ" else "スクロール"}",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("↑") }
-                TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("↓") }
-                TextButton(onClick = onRemove) { Text("削除") }
-            }
+            FlowNodeHeader(
+                path = path,
+                title = action.flowTitle(),
+                summary = action.flowSummary(),
+                expanded = expanded,
+                accent = accent,
+                canMoveUp = canMoveUp,
+                canMoveDown = canMoveDown,
+                onToggle = { expanded = !expanded },
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+                onRemove = onRemove,
+            )
 
-            val coordinateText = when (action) {
-                is AutomationAction.Tap ->
-                    "位置: (${action.x.roundToInt()}, ${action.y.roundToInt()})"
-                is AutomationAction.Swipe ->
-                    "開始: (${action.startX.roundToInt()}, ${action.startY.roundToInt()}) → " +
-                        "終了: (${action.endX.roundToInt()}, ${action.endY.roundToInt()})"
-                is AutomationAction.IfBlock -> ""
-                is AutomationAction.BreakLoop -> ""
-            }
-            Text(coordinateText)
-            OutlinedButton(onClick = onPickCoordinates) { Text("画面上で位置を指定") }
+            if (expanded) {
+                OutlinedButton(
+                    onClick = onPickCoordinates,
+                    modifier = Modifier.padding(top = 6.dp),
+                ) { Text("画面上で位置を指定") }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = action.waitAfterMs.toString(),
-                    onValueChange = { value ->
-                        value.toLongOrNull()?.let { wait ->
-                            onReplace(action.withWait(wait))
-                        }
-                    },
-                    label = { Text("次の動作までの待機時間 ms (±30)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
-                )
-                if (action is AutomationAction.Swipe) {
-                    OutlinedTextField(
-                        value = action.durationMs.toString(),
-                        onValueChange = { value ->
-                            value.toLongOrNull()?.let { duration ->
-                                onReplace(action.copy(durationMs = duration.coerceIn(100, 2_000)))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CommitNumberField(
+                        value = action.waitAfterMs.toString(),
+                        label = "次の動作までの待機時間 ms (±30)",
+                        modifier = Modifier.weight(1f),
+                        onCommit = { value ->
+                            value.toLongOrNull()?.let { wait ->
+                                onReplace(action.withWait(wait))
                             }
                         },
-                        label = { Text("動作時間 ms") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
                     )
+                    if (action is AutomationAction.Swipe) {
+                        CommitNumberField(
+                            value = action.durationMs.toString(),
+                            label = "動作時間 ms",
+                            modifier = Modifier.weight(1f),
+                            onCommit = { value ->
+                                value.toLongOrNull()?.let { duration ->
+                                    onReplace(action.copy(durationMs = duration.coerceIn(100, 2_000)))
+                                }
+                            },
+                        )
+                    }
                 }
-            }
 
-            if (action is AutomationAction.Swipe) {
-                TextButton(onClick = {
-                    onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
-                }) {
-                    Text(if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF")
+                if (action is AutomationAction.Swipe) {
+                    TextButton(onClick = {
+                        onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                    }) {
+                        Text(if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF")
+                    }
                 }
-            }
 
-            Text("位置の揺らぎ: ±${action.jitterPx}px")
-            Slider(
-                value = action.jitterPx.toFloat(),
-                onValueChange = { onReplace(action.withJitter(it.roundToInt())) },
-                valueRange = 3f..10f,
-                steps = 6,
-            )
+                Text("位置の揺らぎ: ±${action.jitterPx}px")
+                Slider(
+                    value = action.jitterPx.toFloat(),
+                    onValueChange = { onReplace(action.withJitter(it.roundToInt())) },
+                    valueRange = 3f..10f,
+                    steps = 6,
+                )
+            }
         }
     }
 }

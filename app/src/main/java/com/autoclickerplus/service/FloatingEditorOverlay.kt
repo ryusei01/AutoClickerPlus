@@ -28,6 +28,8 @@ import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
+import com.autoclickerplus.model.flowSummary
+import com.autoclickerplus.model.flowTitle
 import kotlin.math.roundToInt
 
 data class FloatingEditorCallbacks(
@@ -59,7 +61,7 @@ class FloatingEditorOverlay(
     private var content: LinearLayout? = null
     private var params: WindowManager.LayoutParams? = null
     private var config = AutomationConfig()
-    private val collapsedIfIds = mutableSetOf<String>()
+    private val expandedDetailIds = mutableSetOf<String>()
 
     val isVisible: Boolean get() = root != null
 
@@ -87,7 +89,7 @@ class FloatingEditorOverlay(
             setPadding(dp(8), 0, dp(12), 0)
         })
         header.addView(TextView(service).apply {
-            text = "アクション編集"
+            text = "フロー編集"
             textSize = 18f
             setTextColor(Color.WHITE)
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
@@ -161,6 +163,7 @@ class FloatingEditorOverlay(
             body.addView(label(service.getString(R.string.empty_actions)))
         } else {
             config.actions.forEachIndexed { index, action ->
+                if (index > 0) body.addView(flowArrow())
                 body.addView(actionEditor("${index + 1}", index, config.actions.size, action))
             }
         }
@@ -222,63 +225,61 @@ class FloatingEditorOverlay(
         is AutomationAction.IfBlock -> ifEditor(path, index, siblingCount, action)
         is AutomationAction.BreakLoop -> breakEditor(path, index, siblingCount, action)
         else -> LinearLayout(service).apply {
+            val expanded = action.id in expandedDetailIds
+            val nodeColor = if (action is AutomationAction.Tap) {
+                0xFF2E4A63.toInt()
+            } else {
+                0xFF2A4F48.toInt()
+            }
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = roundedBackground(0xFF403D48.toInt(), dp(12).toFloat())
-            val type = if (action is AutomationAction.Tap) "タップ" else "スクロール"
-            addView(LinearLayout(service).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(label("$path. $type"), LinearLayout.LayoutParams(0, dp(44), 1f))
-                addView(smallButton("↑", index > 0) { callbacks.onMove(action.id, -1) })
-                addView(smallButton("↓", index < siblingCount - 1) {
-                    callbacks.onMove(action.id, 1)
+            background = roundedBackground(nodeColor, dp(12).toFloat())
+            addView(flowNodeHeader(path, action, expanded, index, siblingCount))
+            if (expanded) {
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(label(coordinateText(action)), LinearLayout.LayoutParams(0, dp(48), 1f))
+                    addView(smallButton("修正", true) {
+                        callbacks.onPickCoordinates(action.id)
+                    })
                 })
-                addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
-            })
-            addView(LinearLayout(service).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(label(coordinateText(action)), LinearLayout.LayoutParams(0, dp(48), 1f))
-                addView(smallButton("修正", true) {
-                    callbacks.onPickCoordinates(action.id)
+                addView(numberField(
+                    "次の動作までの待機時間 ms（±30）",
+                    action.waitAfterMs.toString(),
+                ) { value ->
+                    value.toLongOrNull()?.let { callbacks.onReplace(action.withWait(it)) }
                 })
-            })
-            addView(numberField(
-                "次の動作までの待機時間 ms（±30）",
-                action.waitAfterMs.toString(),
-            ) { value ->
-                value.toLongOrNull()?.let { callbacks.onReplace(action.withWait(it)) }
-            })
-            if (action is AutomationAction.Swipe) {
-                addView(numberField("スクロール時間 ms", action.durationMs.toString()) { value ->
-                    value.toLongOrNull()?.let {
-                        callbacks.onReplace(action.copy(durationMs = it.coerceIn(100L, 2_000L)))
-                    }
-                })
-                addView(smallButton(
-                    if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF",
-                    true,
-                ) {
-                    callbacks.onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                if (action is AutomationAction.Swipe) {
+                    addView(numberField("スクロール時間 ms", action.durationMs.toString()) { value ->
+                        value.toLongOrNull()?.let {
+                            callbacks.onReplace(action.copy(durationMs = it.coerceIn(100L, 2_000L)))
+                        }
+                    })
+                    addView(smallButton(
+                        if (action.stopAtEnd) "最後で止める: ON" else "最後で止める: OFF",
+                        true,
+                    ) {
+                        callbacks.onReplace(action.copy(stopAtEnd = !action.stopAtEnd))
+                    })
+                }
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(label("位置の揺らぎ ±${action.jitterPx}px"),
+                        LinearLayout.LayoutParams(0, dp(44), 1f))
+                    addView(smallButton("−", action.jitterPx > 3) {
+                        callbacks.onReplace(action.withJitter(action.jitterPx - 1))
+                    })
+                    addView(smallButton("+", action.jitterPx < 10) {
+                        callbacks.onReplace(action.withJitter(action.jitterPx + 1))
+                    })
                 })
             }
-            addView(LinearLayout(service).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(label("位置の揺らぎ ±${action.jitterPx}px"),
-                    LinearLayout.LayoutParams(0, dp(44), 1f))
-                addView(smallButton("−", action.jitterPx > 3) {
-                    callbacks.onReplace(action.withJitter(action.jitterPx - 1))
-                })
-                addView(smallButton("+", action.jitterPx < 10) {
-                    callbacks.onReplace(action.withJitter(action.jitterPx + 1))
-                })
-            })
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { setMargins(0, dp(4), 0, dp(6)) }
+            ).apply { setMargins(0, dp(2), 0, dp(2)) }
         }
     }
 
@@ -288,24 +289,18 @@ class FloatingEditorOverlay(
         siblingCount: Int,
         action: AutomationAction.BreakLoop,
     ) = LinearLayout(service).apply {
+        val expanded = action.id in expandedDetailIds
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(8), dp(10), dp(8))
         background = roundedBackground(0xFF5C4033.toInt(), dp(12).toFloat())
-        addView(LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(label("$path. ループ終了"), LinearLayout.LayoutParams(0, dp(44), 1f))
-            addView(smallButton("↑", index > 0) { callbacks.onMove(action.id, -1) })
-            addView(smallButton("↓", index < siblingCount - 1) {
-                callbacks.onMove(action.id, 1)
-            })
-            addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
-        })
-        addView(label("この操作に到達すると繰り返しを終了します"))
+        addView(flowNodeHeader(path, action, expanded, index, siblingCount))
+        if (expanded) {
+            addView(label("この操作に到達すると繰り返しを終了します"))
+        }
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { setMargins(0, dp(4), 0, dp(6)) }
+        ).apply { setMargins(0, dp(2), 0, dp(2)) }
     }
 
     private fun ifEditor(
@@ -314,34 +309,22 @@ class FloatingEditorOverlay(
         siblingCount: Int,
         block: AutomationAction.IfBlock,
     ) = LinearLayout(service).apply {
-        val expanded = block.id !in collapsedIfIds
+        val expanded = block.id in expandedDetailIds
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(8), dp(10), dp(8))
-        background = roundedBackground(0xFF403D48.toInt(), dp(12).toFloat())
-        addView(LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(label("IF $path"), LinearLayout.LayoutParams(0, dp(44), 1f))
-            addView(smallButton(block.operator.name, true) {
-                callbacks.onReplace(
-                    block.copy(
-                        operator = if (block.operator == ConditionOperator.AND) {
-                            ConditionOperator.OR
-                        } else {
-                            ConditionOperator.AND
-                        },
-                    ),
-                )
-            })
-            addView(smallButton(if (expanded) "閉じる" else "開く", true) {
-                if (expanded) collapsedIfIds += block.id else collapsedIfIds -= block.id
-                render()
-            })
-            addView(smallButton("↑", index > 0) { callbacks.onMove(block.id, -1) })
-            addView(smallButton("↓", index < siblingCount - 1) {
-                callbacks.onMove(block.id, 1)
-            })
-            addView(smallButton("削除", true) { callbacks.onRemove(block.id) })
+        background = roundedBackground(0xFF4A3A62.toInt(), dp(12).toFloat())
+        addView(flowNodeHeader(path, block, expanded, index, siblingCount))
+        if (expanded) {
+        addView(smallButton(block.operator.name, true) {
+            callbacks.onReplace(
+                block.copy(
+                    operator = if (block.operator == ConditionOperator.AND) {
+                        ConditionOperator.OR
+                    } else {
+                        ConditionOperator.AND
+                    },
+                ),
+            )
         })
         addView(numberField(
             "次の動作までの待機時間 ms（±30）",
@@ -349,7 +332,6 @@ class FloatingEditorOverlay(
         ) { value ->
             value.toLongOrNull()?.let { callbacks.onReplace(block.withWait(it)) }
         })
-        if (expanded) {
         addView(label("条件"))
         block.conditions.forEach { addView(conditionEditor(block.id, it)) }
         addView(LinearLayout(service).apply {
@@ -370,7 +352,7 @@ class FloatingEditorOverlay(
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { setMargins(0, dp(4), 0, dp(6)) }
+        ).apply { setMargins(0, dp(2), 0, dp(2)) }
     }
 
     private fun conditionEditor(
@@ -461,8 +443,12 @@ class FloatingEditorOverlay(
     ) = LinearLayout(service).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(6), 0, dp(6))
-        addView(label(title))
+        addView(label("◆ $title"))
+        if (actions.isEmpty()) {
+            addView(label("（空）"))
+        }
         actions.forEachIndexed { index, action ->
+            if (index > 0) addView(flowArrow())
             addView(actionEditor("$pathPrefix${index + 1}", index, actions.size, action))
         }
         addView(LinearLayout(service).apply {
@@ -482,6 +468,51 @@ class FloatingEditorOverlay(
         })
     }
 
+    private fun flowNodeHeader(
+        path: String,
+        action: AutomationAction,
+        expanded: Boolean,
+        index: Int,
+        siblingCount: Int,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("$path  ${action.flowTitle()}").apply {
+                setOnClickListener { toggleExpanded(action.id) }
+            }, LinearLayout.LayoutParams(0, dp(36), 1f))
+            addView(smallButton(if (expanded) "閉じる" else "詳細", true) {
+                toggleExpanded(action.id)
+            })
+            addView(smallButton("↑", index > 0) { callbacks.onMove(action.id, -1) })
+            addView(smallButton("↓", index < siblingCount - 1) {
+                callbacks.onMove(action.id, 1)
+            })
+            addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
+        })
+        addView(label(action.flowSummary()).apply {
+            setOnClickListener { toggleExpanded(action.id) }
+        })
+    }
+
+    private fun toggleExpanded(id: String) {
+        if (id in expandedDetailIds) {
+            expandedDetailIds -= id
+        } else {
+            expandedDetailIds += id
+        }
+        render()
+    }
+
+    private fun flowArrow() = TextView(service).apply {
+        text = "↓"
+        textSize = 16f
+        gravity = Gravity.CENTER
+        setTextColor(0xFFB8C0D0.toInt())
+        setPadding(0, dp(2), 0, dp(2))
+    }
+
     private fun textField(
         labelText: String,
         value: String,
@@ -489,30 +520,7 @@ class FloatingEditorOverlay(
     ) = LinearLayout(service).apply {
         orientation = LinearLayout.VERTICAL
         addView(label(labelText))
-        val row = LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        val field = EditText(service).apply {
-            setText(value)
-            setTextColor(Color.WHITE)
-            setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_DONE
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_DONE) {
-                    onCommit(text.toString())
-                    clearFocus()
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-        row.addView(field, LinearLayout.LayoutParams(0, dp(52), 1f))
-        row.addView(smallButton("保存", true) {
-            onCommit(field.text.toString())
-            field.clearFocus()
-        })
-        addView(row)
+        addView(commitField(value, InputType.TYPE_CLASS_TEXT, onCommit))
     }
 
     private fun numberField(
@@ -522,35 +530,41 @@ class FloatingEditorOverlay(
     ) = LinearLayout(service).apply {
         orientation = LinearLayout.VERTICAL
         addView(label(labelText))
-        val inputRow = LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val field = EditText(service).apply {
-            setText(value)
+        addView(commitField(value, InputType.TYPE_CLASS_NUMBER, onCommit).apply {
             hint = "数値を入力"
-            setTextColor(Color.WHITE)
             setHintTextColor(0xFFBBBBBB.toInt())
-            inputType = InputType.TYPE_CLASS_NUMBER
-            imeOptions = EditorInfo.IME_ACTION_DONE
-            setSingleLine(true)
             setSelectAllOnFocus(true)
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_DONE) {
-                    onCommit(text.toString())
-                    clearFocus()
-                    true
-                } else {
-                    false
-                }
+        })
+    }
+
+    private fun commitField(
+        value: String,
+        inputTypeValue: Int,
+        onCommit: (String) -> Unit,
+    ) = EditText(service).apply {
+        setText(value)
+        setTextColor(Color.WHITE)
+        setSingleLine(true)
+        inputType = inputTypeValue
+        imeOptions = EditorInfo.IME_ACTION_DONE
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(52),
+        )
+        setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                onCommit(text.toString())
+                clearFocus()
+                true
+            } else {
+                false
             }
         }
-        inputRow.addView(field, LinearLayout.LayoutParams(0, dp(52), 1f))
-        inputRow.addView(smallButton("保存", true) {
-            onCommit(field.text.toString())
-            field.clearFocus()
-        })
-        addView(inputRow)
+        setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                onCommit(text.toString())
+            }
+        }
     }
 
     private fun actionButton(icon: Int, text: String, onClick: () -> Unit) =
