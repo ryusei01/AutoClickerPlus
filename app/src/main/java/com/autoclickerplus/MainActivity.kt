@@ -252,7 +252,7 @@ private fun ActionCard(
                             onReplace(action.withWait(wait))
                         }
                     },
-                    label = { Text("実行後の待機 ms (±30)") },
+                    label = { Text("次の動作までの待機時間 ms (±30)") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f),

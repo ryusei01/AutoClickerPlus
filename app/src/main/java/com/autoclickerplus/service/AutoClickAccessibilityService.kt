@@ -13,6 +13,8 @@ import com.autoclickerplus.engine.GesturePoint
 import com.autoclickerplus.engine.RunnerState
 import com.autoclickerplus.engine.ScreenBounds
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.AutomationConfigEditor
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +24,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -30,6 +34,8 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private lateinit var repository: AutomationRepository
     private lateinit var runner: AutomationRunner
     private lateinit var overlay: OverlayController
+    private val configMutex = Mutex()
+    private var currentConfig = AutomationConfig()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -37,13 +43,38 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         runner = AutomationRunner(serviceScope, this)
         overlay = OverlayController(
             service = this,
-            onStart = ::startConfiguredAutomation,
-            onStop = { runner.stop() },
+            callbacks = OverlayCallbacks(
+                onStart = ::startConfiguredAutomation,
+                onStop = { runner.stop() },
+                onAddTap = { addAndPick(AutomationAction.Tap()) },
+                onAddSwipe = { addAndPick(AutomationAction.Swipe()) },
+                onReplace = { action ->
+                    mutateConfig { AutomationConfigEditor.replace(it, action) }
+                },
+                onRemove = { actionId ->
+                    mutateConfig { AutomationConfigEditor.remove(it, actionId) }
+                },
+                onMove = { actionId, offset ->
+                    mutateConfig { AutomationConfigEditor.move(it, actionId, offset) }
+                },
+                onRepeatMode = { mode ->
+                    mutateConfig { AutomationConfigEditor.setRepeatMode(it, mode) }
+                },
+                onRepeatCount = { count ->
+                    mutateConfig { AutomationConfigEditor.setRepeatCount(it, count) }
+                },
+            ),
         )
         activeService = this
         overlay.showControls()
         serviceScope.launch {
             runner.state.collect(overlay::updateRunnerState)
+        }
+        serviceScope.launch {
+            repository.config.collect { config ->
+                currentConfig = config
+                overlay.updateConfig(config)
+            }
         }
     }
 
@@ -96,22 +127,34 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private fun pickCoordinates(actionId: String) {
         if (!::overlay.isInitialized) return
         serviceScope.launch {
-            val config = repository.config.first()
-            val action = config.actions.firstOrNull { it.id == actionId } ?: return@launch
             runner.stop()
-            overlay.showPicker(action) { updatedAction ->
-                serviceScope.launch {
-                    val latest = repository.config.first()
-                    repository.save(
-                        latest.copy(
-                            actions = latest.actions.map {
-                                if (it.id == updatedAction.id) updatedAction else it
-                            },
-                        ),
-                    )
-                }
-            }
+            currentConfig = repository.config.first()
+            overlay.updateConfig(currentConfig)
+            overlay.showPicker(actionId)
         }
+    }
+
+    private fun addAndPick(action: AutomationAction) {
+        serviceScope.launch {
+            updateConfig { AutomationConfigEditor.add(it, action) }
+            overlay.showPicker(action.id)
+        }
+    }
+
+    private fun mutateConfig(transform: (AutomationConfig) -> AutomationConfig) {
+        serviceScope.launch { updateConfig(transform) }
+    }
+
+    private suspend fun updateConfig(
+        transform: (AutomationConfig) -> AutomationConfig,
+    ): AutomationConfig = configMutex.withLock {
+        runner.stop()
+        val latest = repository.config.first()
+        val updated = transform(latest)
+        currentConfig = updated
+        overlay.updateConfig(updated)
+        repository.save(updated)
+        updated
     }
 
     private suspend fun dispatch(gesture: GestureDescription): Boolean =

@@ -8,32 +8,72 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
-import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.autoclickerplus.R
 import com.autoclickerplus.engine.RunnerState
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.RepeatMode
 import kotlin.math.roundToInt
+
+data class OverlayCallbacks(
+    val onStart: () -> Unit,
+    val onStop: () -> Unit,
+    val onAddTap: () -> Unit,
+    val onAddSwipe: () -> Unit,
+    val onReplace: (AutomationAction) -> Unit,
+    val onRemove: (String) -> Unit,
+    val onMove: (String, Int) -> Unit,
+    val onRepeatMode: (RepeatMode) -> Unit,
+    val onRepeatCount: (Int) -> Unit,
+)
 
 class OverlayController(
     private val service: AccessibilityService,
-    private val onStart: () -> Unit,
-    private val onStop: () -> Unit,
+    private val callbacks: OverlayCallbacks,
 ) {
     private val windowManager = service.getSystemService(WindowManager::class.java)
+    private val picker = CoordinatePickerOverlay(service)
+    private lateinit var editor: FloatingEditorOverlay
+
     private var controls: View? = null
-    private var picker: View? = null
     private var statusLabel: TextView? = null
     private var runnerState = RunnerState.IDLE
+    private var config = AutomationConfig()
+    private var toolbarX = dp(12)
+    private var toolbarY = dp(100)
+    private var collapsed = false
+
+    init {
+        editor = FloatingEditorOverlay(
+            service,
+            FloatingEditorCallbacks(
+                onAddTap = callbacks.onAddTap,
+                onAddSwipe = callbacks.onAddSwipe,
+                onReplace = callbacks.onReplace,
+                onRemove = callbacks.onRemove,
+                onMove = callbacks.onMove,
+                onPickCoordinates = ::showPicker,
+                onRepeatMode = callbacks.onRepeatMode,
+                onRepeatCount = callbacks.onRepeatCount,
+                onClose = {
+                    editor.hide()
+                    showControls()
+                },
+            ),
+        )
+    }
 
     fun showControls() {
-        if (controls != null || picker != null) return
+        if (controls != null || editor.isVisible || picker.isVisible) return
+
         val panel = LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-            background = roundedBackground(0xEE25232AL.toInt(), dp(16).toFloat())
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+            background = roundedBackground(0xF2292730.toInt(), dp(16).toFloat())
         }
         val dragHandle = TextView(service).apply {
             text = "↕"
@@ -41,33 +81,55 @@ class OverlayController(
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             setPadding(dp(8), 0, dp(8), 0)
+            contentDescription = "パネルを移動"
+        }
+        val actions = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            visibility = if (collapsed) View.GONE else View.VISIBLE
         }
         val status = TextView(service).apply {
             text = runnerState.label
             setTextColor(Color.WHITE)
-            setPadding(dp(4), 0, dp(8), 0)
+            setPadding(dp(6), 0, dp(6), 0)
         }
-        val start = Button(service).apply {
-            text = "START"
-            setOnClickListener { onStart() }
-        }
-        val stop = Button(service).apply {
-            text = "STOP"
-            setOnClickListener { onStop() }
+        actions.addView(status)
+        actions.addView(iconButton(R.drawable.ic_play, "開始", callbacks.onStart))
+        actions.addView(iconButton(R.drawable.ic_stop, "停止", callbacks.onStop))
+        actions.addView(iconButton(R.drawable.ic_tap, "タップを追加", callbacks.onAddTap))
+        actions.addView(iconButton(R.drawable.ic_swipe, "スクロールを追加", callbacks.onAddSwipe))
+        actions.addView(iconButton(R.drawable.ic_edit, "アクションを編集") {
+            removeControls()
+            editor.show(config)
+        })
+        actions.addView(iconButton(R.drawable.ic_close, "フローティングを終了") {
+            callbacks.onStop()
+            removeAll()
+        })
+        val collapse = viewIconButton(
+            R.drawable.ic_collapse,
+            if (collapsed) "パネルを展開" else "パネルを最小化",
+        ) {
+            collapsed = !collapsed
+            actions.visibility = if (collapsed) View.GONE else View.VISIBLE
+            (it as ImageButton).rotation = if (collapsed) 180f else 0f
+            it.contentDescription = if (collapsed) "パネルを展開" else "パネルを最小化"
+        }.apply {
+            rotation = if (collapsed) 180f else 0f
         }
         panel.addView(dragHandle)
-        panel.addView(status)
-        panel.addView(start)
-        panel.addView(stop)
+        panel.addView(actions)
+        panel.addView(collapse)
 
         val params = overlayParams(
-            width = WindowManager.LayoutParams.WRAP_CONTENT,
-            height = WindowManager.LayoutParams.WRAP_CONTENT,
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = dp(12)
-            y = dp(100)
+            x = toolbarX
+            y = toolbarY
         }
         makeDraggable(dragHandle, panel, params)
         windowManager.addView(panel, params)
@@ -75,67 +137,27 @@ class OverlayController(
         statusLabel = status
     }
 
-    fun showPicker(action: AutomationAction, onDone: (AutomationAction) -> Unit) {
+    fun showPicker(actionId: String) {
+        val action = config.actions.firstOrNull { it.id == actionId } ?: return
+        val sequence = config.actions.indexOfFirst { it.id == actionId } + 1
         removeControls()
-        removePicker()
-
-        val root = FrameLayout(service).apply {
-            setBackgroundColor(0x22000000)
-        }
-        val markerSize = dp(52)
-        val markers = when (action) {
-            is AutomationAction.Tap -> listOf(
-                marker("T", Color.rgb(211, 47, 47), action.x, action.y, markerSize),
-            )
-            is AutomationAction.Swipe -> listOf(
-                marker("S", Color.rgb(25, 118, 210), action.startX, action.startY, markerSize),
-                marker("E", Color.rgb(46, 125, 50), action.endX, action.endY, markerSize),
-            )
-        }
-        markers.forEach(root::addView)
-
-        val done = Button(service).apply {
-            text = "この位置で決定"
-            setOnClickListener {
-                val result = when (action) {
-                    is AutomationAction.Tap -> action.copy(
-                        x = markers[0].centerX(),
-                        y = markers[0].centerY(),
-                    )
-                    is AutomationAction.Swipe -> action.copy(
-                        startX = markers[0].centerX(),
-                        startY = markers[0].centerY(),
-                        endX = markers[1].centerX(),
-                        endY = markers[1].centerY(),
-                    )
-                }
-                removePicker()
-                showControls()
-                onDone(result)
-            }
-        }
-        root.addView(
-            done,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.CENTER_HORIZONTAL,
-            ).apply { topMargin = dp(24) },
+        editor.hide()
+        picker.show(
+            action = action,
+            sequenceNumber = sequence,
+            onDone = { updated ->
+                callbacks.onReplace(updated)
+                editor.show(config.copy(
+                    actions = config.actions.map { if (it.id == updated.id) updated else it },
+                ))
+            },
+            onCancel = { editor.show(config) },
         )
-
-        val params = overlayParams(
-            width = WindowManager.LayoutParams.MATCH_PARENT,
-            height = WindowManager.LayoutParams.MATCH_PARENT,
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-        )
-        windowManager.addView(root, params)
-        picker = root
     }
 
-    fun removeAll() {
-        removePicker()
-        removeControls()
+    fun updateConfig(config: AutomationConfig) {
+        this.config = config
+        editor.updateConfig(config)
     }
 
     fun updateRunnerState(state: RunnerState) {
@@ -143,43 +165,27 @@ class OverlayController(
         statusLabel?.text = state.label
     }
 
-    private fun marker(
-        label: String,
-        color: Int,
-        centerX: Float,
-        centerY: Float,
-        size: Int,
-    ): TextView = TextView(service).apply {
-        text = label
-        textSize = 18f
-        setTextColor(Color.WHITE)
-        gravity = Gravity.CENTER
-        background = roundedBackground(color, size / 2f)
-        x = centerX - size / 2f
-        y = centerY - size / 2f
-        layoutParams = FrameLayout.LayoutParams(size, size)
-        setOnTouchListener(object : View.OnTouchListener {
-            private var touchX = 0f
-            private var touchY = 0f
-
-            override fun onTouch(view: View, event: MotionEvent): Boolean {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        touchX = event.rawX - view.x
-                        touchY = event.rawY - view.y
-                        return true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val parentView = view.parent as View
-                        view.x = (event.rawX - touchX).coerceIn(0f, (parentView.width - view.width).toFloat())
-                        view.y = (event.rawY - touchY).coerceIn(0f, (parentView.height - view.height).toFloat())
-                        return true
-                    }
-                }
-                return false
-            }
-        })
+    fun removeAll() {
+        picker.hide()
+        editor.hide()
+        removeControls()
     }
+
+    private fun viewIconButton(
+        icon: Int,
+        description: String,
+        onClick: (View) -> Unit,
+    ) = ImageButton(service).apply {
+        setImageResource(icon)
+        contentDescription = description
+        setBackgroundColor(Color.TRANSPARENT)
+        setPadding(dp(7), dp(7), dp(7), dp(7))
+        setOnClickListener(onClick)
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+    }
+
+    private fun iconButton(icon: Int, description: String, onClick: () -> Unit) =
+        viewIconButton(icon, description) { onClick() }
 
     private fun makeDraggable(
         handle: View,
@@ -202,10 +208,15 @@ class OverlayController(
                 MotionEvent.ACTION_MOVE -> {
                     params.x = downX + (event.rawX - downRawX).roundToInt()
                     params.y = downY + (event.rawY - downRawY).roundToInt()
+                    toolbarX = params.x
+                    toolbarY = params.y
                     windowManager.updateViewLayout(target, params)
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                MotionEvent.ACTION_UP -> {
+                    handle.performClick()
+                    true
+                }
                 else -> true
             }
         }
@@ -225,19 +236,10 @@ class OverlayController(
         cornerRadius = radius
     }
 
-    private fun TextView.centerX() = x + width / 2f
-    private fun TextView.centerY() = y + height / 2f
-    private fun dp(value: Int): Int = (value * service.resources.displayMetrics.density).roundToInt()
-
     private fun removeControls() {
         controls?.let { runCatching { windowManager.removeView(it) } }
         controls = null
         statusLabel = null
-    }
-
-    private fun removePicker() {
-        picker?.let { runCatching { windowManager.removeView(it) } }
-        picker = null
     }
 
     private val RunnerState.label: String
@@ -246,4 +248,7 @@ class OverlayController(
             RunnerState.RUNNING -> "実行中"
             RunnerState.FAILED -> "失敗"
         }
+
+    private fun dp(value: Int): Int =
+        (value * service.resources.displayMetrics.density).roundToInt()
 }
