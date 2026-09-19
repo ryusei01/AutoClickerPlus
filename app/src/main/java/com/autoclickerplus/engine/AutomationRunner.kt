@@ -136,6 +136,8 @@ class AutomationRunner(
                 mutableState.value = RunnerState.FAILED
             } catch (_: LoopBreakException) {
                 mutableState.value = RunnerState.IDLE
+            } catch (_: JumpLimitException) {
+                mutableState.value = RunnerState.FAILED
             }
         }
         return true
@@ -153,7 +155,7 @@ class AutomationRunner(
         var loop = 0
         while (loop < totalLoops) {
             try {
-                executeActions(config.actions, bounds)
+                executeActions(config.actions, bounds, allowJump = true)
             } catch (_: LoopBreakException) {
                 return
             }
@@ -167,45 +169,89 @@ class AutomationRunner(
     private suspend fun executeActions(
         actions: List<AutomationAction>,
         bounds: ScreenBounds,
-    ) {
-        for (action in actions) {
-            when (action) {
-                is AutomationAction.Tap -> {
-                    if (!executor.tap(randomizer.tapPoint(action, bounds))) {
-                        throw GestureFailedException()
-                    }
-                }
-                is AutomationAction.Swipe -> {
-                    val (start, end) = randomizer.swipePoints(action, bounds)
-                    val startedAt = nowMs()
-                    if (!executor.swipe(start, end, action.durationMs, action.stopAtEnd)) {
-                        throw GestureFailedException()
-                    }
-                    val elapsed = (nowMs() - startedAt).coerceAtLeast(0L)
-                    val expectedMs = action.durationMs +
-                        if (action.stopAtEnd) SWIPE_HOLD_MS else 0L
-                    val remainingStroke = (expectedMs - elapsed).coerceAtLeast(0L)
-                    wait(remainingStroke + SWIPE_SETTLE_MS)
-                }
-                is AutomationAction.IfBlock -> {
-                    val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
-                    executeActions(
-                        if (matched) action.thenActions else action.elseActions,
-                        bounds,
-                    )
-                }
-                is AutomationAction.BreakLoop -> throw LoopBreakException()
-            }
+        allowJump: Boolean,
+    ): BranchOutcome {
+        var index = 0
+        var jumps = 0
+        while (index < actions.size) {
+            val action = actions[index]
+            val outcome = executeAction(action, bounds)
             wait(randomizer.waitMs(action.waitAfterMs))
+            when (outcome) {
+                BranchOutcome.Continue -> index++
+                is BranchOutcome.Jump -> {
+                    if (!allowJump) return outcome
+                    val target = outcome.actionNumber - 1
+                    if (target in actions.indices) {
+                        jumps++
+                        if (jumps > MAX_JUMPS_PER_LOOP) {
+                            throw JumpLimitException()
+                        }
+                        index = target
+                    } else {
+                        index++
+                    }
+                }
+            }
         }
+        return BranchOutcome.Continue
+    }
+
+    private suspend fun executeAction(
+        action: AutomationAction,
+        bounds: ScreenBounds,
+    ): BranchOutcome {
+        when (action) {
+            is AutomationAction.Tap -> {
+                if (!executor.tap(randomizer.tapPoint(action, bounds))) {
+                    throw GestureFailedException()
+                }
+            }
+            is AutomationAction.Swipe -> {
+                val (start, end) = randomizer.swipePoints(action, bounds)
+                val startedAt = nowMs()
+                if (!executor.swipe(start, end, action.durationMs, action.stopAtEnd)) {
+                    throw GestureFailedException()
+                }
+                val elapsed = (nowMs() - startedAt).coerceAtLeast(0L)
+                val expectedMs = action.durationMs +
+                    if (action.stopAtEnd) SWIPE_HOLD_MS else 0L
+                val remainingStroke = (expectedMs - elapsed).coerceAtLeast(0L)
+                wait(remainingStroke + SWIPE_SETTLE_MS)
+            }
+            is AutomationAction.IfBlock -> {
+                val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
+                val branchOutcome = executeActions(
+                    if (matched) action.thenActions else action.elseActions,
+                    bounds,
+                    allowJump = false,
+                )
+                if (branchOutcome is BranchOutcome.Jump) {
+                    return branchOutcome
+                }
+                val destination = if (matched) action.thenJumpTo else action.elseJumpTo
+                if (destination != null && destination >= 1) {
+                    return BranchOutcome.Jump(destination)
+                }
+            }
+            is AutomationAction.BreakLoop -> throw LoopBreakException()
+        }
+        return BranchOutcome.Continue
+    }
+
+    private sealed class BranchOutcome {
+        data object Continue : BranchOutcome()
+        data class Jump(val actionNumber: Int) : BranchOutcome()
     }
 
     private class GestureFailedException : RuntimeException()
     private class LoopBreakException : RuntimeException()
+    private class JumpLimitException : RuntimeException()
 
     private companion object {
         const val LOOP_BOUNDARY_MS = 16L
         const val SWIPE_SETTLE_MS = 80L
         const val SWIPE_HOLD_MS = 180L
+        const val MAX_JUMPS_PER_LOOP = 10_000
     }
 }

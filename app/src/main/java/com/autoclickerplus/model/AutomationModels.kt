@@ -42,6 +42,8 @@ sealed class AutomationAction {
         val operator: ConditionOperator = ConditionOperator.AND,
         val thenActions: List<AutomationAction> = emptyList(),
         val elseActions: List<AutomationAction> = emptyList(),
+        val thenJumpTo: Int? = null,
+        val elseJumpTo: Int? = null,
         override val waitAfterMs: Long = 0L,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
@@ -181,6 +183,8 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
             .map(AutomationCondition::normalized),
         thenActions = thenActions.map(AutomationAction::normalized),
         elseActions = elseActions.map(AutomationAction::normalized),
+        thenJumpTo = thenJumpTo.normalizedJump(),
+        elseJumpTo = elseJumpTo.normalizedJump(),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
         jitterPx = 3,
     )
@@ -188,6 +192,18 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         waitAfterMs = 0L,
         jitterPx = 3,
     )
+}
+
+fun Int?.normalizedJump(): Int? = this?.takeIf { it >= 1 }
+
+fun jumpTargetLabel(target: Int?, fromNumber: Int = 0): String {
+    val number = target ?: return "次へ"
+    return when {
+        fromNumber <= 0 -> "${number}番へ"
+        number < fromNumber -> "${number}番へ戻る"
+        number > fromNumber -> "${number}番へ進む"
+        else -> "${number}番へ"
+    }
 }
 
 fun AutomationConfig.normalized(): AutomationConfig = copy(

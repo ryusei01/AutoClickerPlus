@@ -101,6 +101,25 @@ class AutomationConfigEditorTest {
     }
 
     @Test
+    fun ifBranchJumpTargetsAreNormalized() {
+        val block = AutomationAction.IfBlock(
+            id = "if",
+            thenJumpTo = 0,
+            elseJumpTo = -3,
+        )
+        val config = AutomationConfigEditor.replace(
+            AutomationConfig(actions = listOf(block)),
+            block.copy(thenJumpTo = 2, elseJumpTo = 0),
+        )
+        val saved = config.actions.single() as AutomationAction.IfBlock
+        assertEquals(2, saved.thenJumpTo)
+        assertNull(saved.elseJumpTo)
+        assertEquals("2番へ進む", jumpTargetLabel(2, 1))
+        assertEquals("1番へ戻る", jumpTargetLabel(1, 3))
+        assertEquals("次へ", jumpTargetLabel(null, 2))
+    }
+
+    @Test
     fun uniqueNameAddsNumberWhenDuplicated() {
         val library = ScriptLibrary.default().let {
             it.copy(scripts = listOf(it.activeScript.copy(name = "テスト")))

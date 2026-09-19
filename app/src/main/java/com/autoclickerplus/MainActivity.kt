@@ -61,6 +61,7 @@ import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.jumpTargetLabel
 import com.autoclickerplus.model.summary
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
@@ -219,6 +220,7 @@ private fun AutomationScreen(
                         ActionTreeCard(
                             path = "${index + 1}",
                             action = action,
+                            rootNumber = index + 1,
                             canMoveUp = index > 0,
                             canMoveDown = index < config.actions.lastIndex,
                             viewModel = viewModel,
@@ -529,6 +531,7 @@ private fun CommitTextField(
 private fun ActionTreeCard(
     path: String,
     action: AutomationAction,
+    rootNumber: Int,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     viewModel: AutomationViewModel,
@@ -559,6 +562,7 @@ private fun ActionTreeCard(
         is AutomationAction.IfBlock -> IfBlockCard(
             path = path,
             block = action,
+            rootNumber = rootNumber,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
             viewModel = viewModel,
@@ -572,6 +576,7 @@ private fun ActionTreeCard(
 private fun IfBlockCard(
     path: String,
     block: AutomationAction.IfBlock,
+    rootNumber: Int,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     viewModel: AutomationViewModel,
@@ -584,7 +589,7 @@ private fun IfBlockCard(
             FlowNodeHeader(
                 path = path,
                 title = "IF",
-                summary = block.flowSummary(),
+                summary = block.flowSummary(rootNumber),
                 expanded = expanded,
                 accent = Color(0xFF6A4C93),
                 canMoveUp = canMoveUp,
@@ -648,9 +653,12 @@ private fun IfBlockCard(
                     title = "THEN",
                     pathPrefix = "$path-T",
                     actions = block.thenActions,
+                    jumpTo = block.thenJumpTo,
+                    rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.THEN,
                     viewModel = viewModel,
+                    onJumpToChange = { viewModel.replace(block.copy(thenJumpTo = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -658,9 +666,12 @@ private fun IfBlockCard(
                     title = "ELSE",
                     pathPrefix = "$path-E",
                     actions = block.elseActions,
+                    jumpTo = block.elseJumpTo,
+                    rootNumber = rootNumber,
                     blockId = block.id,
                     side = BranchSide.ELSE,
                     viewModel = viewModel,
+                    onJumpToChange = { viewModel.replace(block.copy(elseJumpTo = it)) },
                     onPickCoordinates = onPickCoordinates,
                     onPickColor = onPickColor,
                 )
@@ -772,9 +783,12 @@ private fun BranchEditor(
     title: String,
     pathPrefix: String,
     actions: List<AutomationAction>,
+    jumpTo: Int?,
+    rootNumber: Int,
     blockId: String,
     side: BranchSide,
     viewModel: AutomationViewModel,
+    onJumpToChange: (Int?) -> Unit,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
@@ -802,6 +816,7 @@ private fun BranchEditor(
             ActionTreeCard(
                 path = "$pathPrefix${index + 1}",
                 action = child,
+                rootNumber = rootNumber,
                 canMoveUp = index > 0,
                 canMoveDown = index < actions.lastIndex,
                 viewModel = viewModel,
@@ -823,6 +838,36 @@ private fun BranchEditor(
                 viewModel.addToBranch(blockId, side, AutomationAction.BreakLoop())
             }) { Text("+終了") }
         }
+        FlowArrow()
+        Text(
+            "→ ${jumpTargetLabel(jumpTo, rootNumber)}",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = {
+                    onJumpToChange(if (jumpTo == null) rootNumber else null)
+                },
+            ) {
+                Text(if (jumpTo == null) "番号へ" else "次へ進む")
+            }
+            if (jumpTo != null) {
+                CommitNumberField(
+                    value = jumpTo.toString(),
+                    label = "アクション番号",
+                    modifier = Modifier.weight(1f),
+                    onCommit = { value ->
+                        onJumpToChange(value.toIntOrNull()?.takeIf { it >= 1 })
+                    },
+                )
+            }
+        }
+        Text(
+            "今より小さい番号は戻り、大きい番号は先へ進みます",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

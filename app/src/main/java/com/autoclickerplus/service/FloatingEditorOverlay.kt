@@ -30,6 +30,7 @@ import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.jumpTargetLabel
 import kotlin.math.roundToInt
 
 data class FloatingEditorCallbacks(
@@ -346,8 +347,8 @@ class FloatingEditorOverlay(
                 callbacks.onAddCondition(block.id, AutomationCondition.PixelColor())
             })
         })
-        addView(branchEditor("$path-T", "THEN", block.id, BranchSide.THEN, block.thenActions))
-        addView(branchEditor("$path-E", "ELSE", block.id, BranchSide.ELSE, block.elseActions))
+        addView(branchEditor("$path-T", "THEN", block, BranchSide.THEN))
+        addView(branchEditor("$path-E", "ELSE", block, BranchSide.ELSE))
         }
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -437,10 +438,12 @@ class FloatingEditorOverlay(
     private fun branchEditor(
         pathPrefix: String,
         title: String,
-        blockId: String,
+        block: AutomationAction.IfBlock,
         side: BranchSide,
-        actions: List<AutomationAction>,
     ) = LinearLayout(service).apply {
+        val actions = if (side == BranchSide.THEN) block.thenActions else block.elseActions
+        val jumpTo = if (side == BranchSide.THEN) block.thenJumpTo else block.elseJumpTo
+        val ownerNumber = pathPrefix.takeWhile { it.isDigit() }.toIntOrNull() ?: 1
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(6), 0, dp(6))
         addView(label("◆ $title"))
@@ -454,18 +457,45 @@ class FloatingEditorOverlay(
         addView(LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(smallButton("+タップ", true) {
-                callbacks.onAddToBranch(blockId, side, AutomationAction.Tap())
+                callbacks.onAddToBranch(block.id, side, AutomationAction.Tap())
             })
             addView(smallButton("+スクロール", true) {
-                callbacks.onAddToBranch(blockId, side, AutomationAction.Swipe())
+                callbacks.onAddToBranch(block.id, side, AutomationAction.Swipe())
             })
             addView(smallButton("+IF", true) {
-                callbacks.onAddToBranch(blockId, side, AutomationAction.IfBlock())
+                callbacks.onAddToBranch(block.id, side, AutomationAction.IfBlock())
             })
             addView(smallButton("+終了", true) {
-                callbacks.onAddToBranch(blockId, side, AutomationAction.BreakLoop())
+                callbacks.onAddToBranch(block.id, side, AutomationAction.BreakLoop())
             })
         })
+        addView(flowArrow())
+        addView(label("→ ${jumpTargetLabel(jumpTo, ownerNumber)}"))
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(smallButton(if (jumpTo == null) "番号へ" else "次へ進む", true) {
+                val updated = if (side == BranchSide.THEN) {
+                    block.copy(thenJumpTo = if (jumpTo == null) ownerNumber else null)
+                } else {
+                    block.copy(elseJumpTo = if (jumpTo == null) ownerNumber else null)
+                }
+                callbacks.onReplace(updated)
+            })
+        })
+        if (jumpTo != null) {
+            addView(numberField("アクション番号", jumpTo.toString()) { value ->
+                val number = value.toIntOrNull()?.takeIf { it >= 1 }
+                callbacks.onReplace(
+                    if (side == BranchSide.THEN) {
+                        block.copy(thenJumpTo = number)
+                    } else {
+                        block.copy(elseJumpTo = number)
+                    },
+                )
+            })
+        }
+        addView(label("今より小さい番号は戻り、大きい番号は先へ進みます"))
     }
 
     private fun flowNodeHeader(
@@ -491,7 +521,7 @@ class FloatingEditorOverlay(
             })
             addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
         })
-        addView(label(action.flowSummary()).apply {
+        addView(label(action.flowSummary(path.takeWhile { it.isDigit() }.toIntOrNull() ?: 0)).apply {
             setOnClickListener { toggleExpanded(action.id) }
         })
     }
