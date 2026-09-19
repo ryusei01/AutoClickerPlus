@@ -1,0 +1,233 @@
+{
+    "exportedAtEpochMs": 1789827584786,
+    "scripts": [
+        {
+            "id": "65e8db38-4987-4e01-a724-7f2969878032",
+            "name": "デフォルト",
+            "config": {
+                "actions": [
+                    {
+                        "type": "swipe",
+                        "id": "4502d7ef-0743-45db-83eb-2d8cec9de661",
+                        "startX": 509.0,
+                        "startY": 360.0,
+                        "endX": 557.0,
+                        "endY": 1609.0,
+                        "durationMs": 100,
+                        "jitterPx": 20
+                    },
+                    {
+                        "type": "if",
+                        "id": "048c31e8-1c93-4bbf-bf6a-4d862a733ac9",
+                        "conditions": [
+                            {
+                                "type": "text_exists",
+                                "id": "98e60a56-329d-4f56-b043-e3a6eae5cfbe",
+                                "query": "ずっと"
+                            }
+                        ],
+                        "elseActions": [
+                            {
+                                "type": "jump_to",
+                                "id": "61caf3df-9eb5-4fa7-b55f-e7dc4f2f5554",
+                                "targetPath": "2",
+                                "targetNumber": 2
+                            }
+                        ]
+                    },
+                    {
+                        "type": "if",
+                        "id": "c2f7864a-bb7a-4cfa-9f8e-a1de10f3fb2e",
+                        "conditions": [
+                            {
+                                "type": "text_exists",
+                                "id": "d9024c53-1530-42dd-a1ac-8dcd3230895f",
+                                "query": "発売中",
+                                "matchMode": "EXACT"
+                            }
+                        ],
+                        "thenActions": [
+                            {
+                                "type": "tap",
+                                "id": "be1ee781-f1b0-4f1f-a31f-2f217940e8a2",
+                                "x": 761.0,
+                                "y": 1754.0,
+                                "waitAfterMs": 361
+                            },
+                            {
+                                "type": "swipe",
+                                "id": "3121f15c-0eb5-4477-9068-2a711edaccbe",
+                                "startX": 539.0,
+                                "startY": 1382.0,
+                                "endX": 542.0,
+                                "endY": 991.0,
+                                "durationMs": 100,
+                                "stopAtEnd": true,
+                                "waitAfterMs": 212,
+                                "jitterPx": 10
+                            },
+                            {
+                                "type": "tap",
+                                "id": "e8da6d47-f1dc-4a9b-98f7-31ec69be2446",
+                                "x": 857.0,
+                                "y": 1954.0,
+                                "waitAfterMs": 233,
+                                "jitterPx": 3
+                            },
+                            {
+                                "type": "tap",
+                                "id": "f07bb76b-5769-4357-ad42-e23cc1ce8d83",
+                                "x": 926.0,
+                                "y": 1801.0,
+                                "waitAfterMs": 343,
+                                "jitterPx": 5
+                            },
+                            {
+                                "type": "tap",
+                                "id": "1cdc4c81-7608-48eb-a8b7-a0c640a4ccfa",
+                                "x": 517.0,
+                                "y": 2086.0,
+                                "waitAfterMs": 511,
+                                "jitterPx": 5
+                            },
+                            {
+                                "type": "break_loop",
+                                "id": "f5700900-2358-4777-958b-8a149d9fe82a"
+                            }
+                        ],
+                        "elseActions": [
+                            {
+                                "type": "jump_to",
+                                "id": "defddc2e-9118-487b-aac4-104e3a547401",
+                                "targetPath": "1",
+                                "waitAfterMs": 500
+                            }
+                        ],
+                        "waitAfterMs": 200
+                    },
+                    {
+                        "type": "break_loop",
+                        "id": "9040d267-7d02-4b84-a029-fa20384c18eb"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "f5e4ec92-9a10-4171-9e85-cfcb9b69f8d5",
+            "name": "デフォルト (2)",
+            "config": {
+                "actions": [
+                    {
+                        "type": "swipe",
+                        "id": "2800d981-8aab-497d-9a83-36581fea64da",
+                        "startX": 509.0,
+                        "startY": 360.0,
+                        "endX": 557.0,
+                        "endY": 1609.0,
+                        "durationMs": 100,
+                        "jitterPx": 20
+                    },
+                    {
+                        "type": "if",
+                        "id": "8546f2d8-4fc4-453d-905e-044a8df488ee",
+                        "conditions": [
+                            {
+                                "type": "text_exists",
+                                "id": "5ecede48-d2d5-4c2c-b9fc-0738fc77945d",
+                                "query": "稲葉浩志"
+                            }
+                        ],
+                        "elseActions": [
+                            {
+                                "type": "jump_to",
+                                "id": "455989db-dd68-4633-a6e3-de81ddeedaa4",
+                                "targetPath": "2",
+                                "targetNumber": 2,
+                                "maxTimes": 3
+                            },
+                            {
+                                "type": "jump_to",
+                                "id": "a82f08f3-a596-46b5-a7b7-606c0098baa1",
+                                "targetPath": "1"
+                            }
+                        ]
+                    },
+                    {
+                        "type": "if",
+                        "id": "fc88febe-e5ed-4511-afcf-7aacb0640db2",
+                        "conditions": [
+                            {
+                                "type": "text_exists",
+                                "id": "fd13231a-b178-4238-9e74-060e1e9f6b4c",
+                                "query": "発売中",
+                                "matchMode": "EXACT"
+                            }
+                        ],
+                        "thenActions": [
+                            {
+                                "type": "tap",
+                                "id": "ef99d421-29b1-4c7c-a4b5-cb9e940bdf80",
+                                "x": 761.0,
+                                "y": 1754.0,
+                                "waitAfterMs": 361
+                            },
+                            {
+                                "type": "swipe",
+                                "id": "5c9067b0-120e-454d-9b30-6c5ef2a45be6",
+                                "startX": 539.0,
+                                "startY": 1382.0,
+                                "endX": 542.0,
+                                "endY": 991.0,
+                                "durationMs": 100,
+                                "stopAtEnd": true,
+                                "waitAfterMs": 212,
+                                "jitterPx": 10
+                            },
+                            {
+                                "type": "tap",
+                                "id": "272913f6-18af-4bdf-b0a6-b3e76868398a",
+                                "x": 857.0,
+                                "y": 1954.0,
+                                "waitAfterMs": 233,
+                                "jitterPx": 3
+                            },
+                            {
+                                "type": "tap",
+                                "id": "96ef8ebf-e736-4e1a-9f35-aafec033f3c7",
+                                "x": 926.0,
+                                "y": 1801.0,
+                                "waitAfterMs": 343,
+                                "jitterPx": 5
+                            },
+                            {
+                                "type": "tap",
+                                "id": "1085d38a-544c-4f3d-89e3-6a3c88d7beb3",
+                                "x": 517.0,
+                                "y": 2086.0,
+                                "waitAfterMs": 511,
+                                "jitterPx": 5
+                            },
+                            {
+                                "type": "break_loop",
+                                "id": "9fbd9084-a4e1-4361-a1e0-80ae455581ce"
+                            }
+                        ],
+                        "elseActions": [
+                            {
+                                "type": "jump_to",
+                                "id": "b689ba68-3a5d-44e3-bdec-b0166f360574",
+                                "targetPath": "1",
+                                "waitAfterMs": 500
+                            }
+                        ],
+                        "waitAfterMs": 200
+                    },
+                    {
+                        "type": "break_loop",
+                        "id": "8649673e-880c-4f6a-be6e-7d89f37e6a71"
+                    }
+                ]
+            }
+        }
+    ]
+}

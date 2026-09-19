@@ -658,6 +658,54 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun jumpMaxTimesStopsReturningToIf() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "start"
+                        point.x < 200f -> "then"
+                        else -> "after"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    thenActions = listOf(
+                        AutomationAction.Tap(x = 80f, y = 10f, jitterPx = 0),
+                        AutomationAction.JumpTo(targetNumber = 1, maxTimes = 2),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("start", "then", "start", "then", "start", "then", "after"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun jumpToBranchPathExecutesNestedAction() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(

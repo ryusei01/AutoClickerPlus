@@ -32,6 +32,7 @@ import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.MAX_JUMP_TIMES
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
 import com.autoclickerplus.model.collectActionPaths
@@ -415,6 +416,14 @@ class FloatingEditorOverlay(
                             })
                         }
                 })
+            })
+            addView(numberField(
+                "IFへ戻る上限回数（0で無制限）",
+                action.maxTimes.toString(),
+            ) { value ->
+                value.toIntOrNull()?.let {
+                    callbacks.onReplace(action.copy(maxTimes = it.coerceIn(0, MAX_JUMP_TIMES)))
+                }
             })
             addView(numberField(
                 "次の動作までの待機時間 ms",

@@ -76,6 +76,7 @@ sealed class AutomationAction {
         override val id: String = UUID.randomUUID().toString(),
         val targetPath: String = "",
         val targetNumber: Int = 1,
+        val maxTimes: Int = 0,
         override val waitAfterMs: Long = 0L,
         override val waitJitterMs: Int = 0,
         override val jitterPx: Int = 3,
@@ -230,6 +231,7 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         copy(
             targetPath = path,
             targetNumber = path.toIntOrNull()?.coerceAtLeast(1) ?: targetNumber.coerceAtLeast(1),
+            maxTimes = maxTimes.coerceIn(0, MAX_JUMP_TIMES),
             waitAfterMs = waitAfterMs.coerceAtLeast(0L),
             waitJitterMs = waitJitterMs.normalizedWaitJitter(),
             jitterPx = 3,
@@ -238,6 +240,7 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
 }
 
 const val MAX_WAIT_MS = 3_600_000L
+const val MAX_JUMP_TIMES = 10_000
 const val DEFAULT_WAIT_JITTER_MS = 30
 const val MAX_WAIT_JITTER_MS = 10_000
 const val DEFAULT_POSITION_JITTER_PX = 1

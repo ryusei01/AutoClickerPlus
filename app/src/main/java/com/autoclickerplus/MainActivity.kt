@@ -66,6 +66,7 @@ import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.MAX_JUMP_TIMES
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
 import com.autoclickerplus.model.collectActionPaths
@@ -1190,6 +1191,18 @@ private fun JumpToCard(
                         }) { Text(targetPath) }
                     }
                 }
+                CommitNumberField(
+                    value = action.maxTimes.toString(),
+                    label = "IFへ戻る上限回数（0で無制限）",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    onCommit = { value ->
+                        value.toIntOrNull()?.let {
+                            onReplace(action.copy(maxTimes = it.coerceIn(0, MAX_JUMP_TIMES)))
+                        }
+                    },
+                )
                 WaitWithJitterFields(
                     waitMs = action.waitAfterMs,
                     jitterMs = action.waitJitterMs,

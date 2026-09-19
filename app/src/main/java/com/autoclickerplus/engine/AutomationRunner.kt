@@ -125,6 +125,7 @@ class AutomationRunner(
     val state: StateFlow<RunnerState> = mutableState.asStateFlow()
 
     private var job: Job? = null
+    private val jumpUseCounts = mutableMapOf<String, Int>()
 
     @Synchronized
     fun start(config: AutomationConfig, bounds: ScreenBounds): Boolean {
@@ -161,6 +162,7 @@ class AutomationRunner(
         val totalLoops = if (config.repeatMode == RepeatMode.INFINITE) Int.MAX_VALUE else config.repeatCount
         var loop = 0
         while (loop < totalLoops) {
+            jumpUseCounts.clear()
             try {
                 executeActions(
                     actions = config.actions,
@@ -296,7 +298,16 @@ class AutomationRunner(
             }
             is AutomationAction.BreakLoop -> throw LoopBreakException()
             is AutomationAction.Wait -> wait(randomizer.waitMs(action.durationMs, action.waitJitterMs))
-            is AutomationAction.JumpTo -> return BranchOutcome.Jump(action.resolvedTargetPath())
+            is AutomationAction.JumpTo -> {
+                if (action.maxTimes > 0) {
+                    val used = jumpUseCounts[action.id] ?: 0
+                    if (used >= action.maxTimes) {
+                        return BranchOutcome.Continue
+                    }
+                    jumpUseCounts[action.id] = used + 1
+                }
+                return BranchOutcome.Jump(action.resolvedTargetPath())
+            }
         }
         return BranchOutcome.Continue
     }
