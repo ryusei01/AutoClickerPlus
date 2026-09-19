@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">AutoClickerPlus</string>
+    <string name="service_name">AutoClickerPlus 操作サービス</string>
+    <string name="service_description">設定したタップとスクロールを画面上で実行します。</string>
+</resources>
