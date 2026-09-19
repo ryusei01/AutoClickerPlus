@@ -64,7 +64,9 @@ import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
+import com.autoclickerplus.model.collectActionPaths
 import com.autoclickerplus.model.jumpTargetLabel
+import com.autoclickerplus.model.resolvedTargetPath
 import com.autoclickerplus.model.summary
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
@@ -74,6 +76,7 @@ import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.service.AutoClickAccessibilityService
 import com.autoclickerplus.data.ScriptTransfer
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private val viewModel: AutomationViewModel by viewModels()
@@ -157,6 +160,13 @@ class MainActivity : ComponentActivity() {
                             moveTaskToBack(true)
                         }
                     },
+                    onPickAllCoordinates = {
+                        if (!AutoClickAccessibilityService.requestBulkCoordinatePick()) {
+                            toast("先に操作サービスを有効にしてください")
+                        } else {
+                            moveTaskToBack(true)
+                        }
+                    },
                     onPickColor = { ifBlockId, conditionId ->
                         if (!AutoClickAccessibilityService.requestColorPick(
                                 ifBlockId,
@@ -194,9 +204,11 @@ private fun AutomationScreen(
     onExport: () -> Unit,
     onImport: () -> Unit,
     onPickCoordinates: (String) -> Unit,
+    onPickAllCoordinates: () -> Unit,
     onPickColor: (String, String) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
+    val jumpPaths = remember(config) { config.collectActionPaths() }
     Scaffold(
         topBar = { TopAppBar(title = { Text("AutoClickerPlus") }) },
     ) { padding ->
@@ -213,11 +225,23 @@ private fun AutomationScreen(
             ScriptSection(library, viewModel, onExport, onImport)
             ServiceSection(serviceConnected, onOpenAccessibility, onShowControls)
             RepeatSection(config, viewModel)
-            Text(
-                text = "フロー（上から順に実行）",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "フロー（上から順に実行）",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (serviceConnected) {
+                    OutlinedButton(onClick = onPickAllCoordinates) {
+                        Text("全位置を一括指定")
+                    }
+                }
+            }
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -228,6 +252,7 @@ private fun AutomationScreen(
                             path = "${index + 1}",
                             action = action,
                             rootNumber = index + 1,
+                            jumpPaths = jumpPaths,
                             canMoveUp = index > 0,
                             canMoveDown = index < config.actions.lastIndex,
                             viewModel = viewModel,
@@ -585,6 +610,7 @@ private fun ActionTreeCard(
     path: String,
     action: AutomationAction,
     rootNumber: Int,
+    jumpPaths: List<String>,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     viewModel: AutomationViewModel,
@@ -616,7 +642,7 @@ private fun ActionTreeCard(
         is AutomationAction.JumpTo -> JumpToCard(
             path = path,
             action = action,
-            rootNumber = rootNumber,
+            jumpPaths = jumpPaths,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
             onReplace = viewModel::replace,
@@ -637,6 +663,7 @@ private fun ActionTreeCard(
             path = path,
             block = action,
             rootNumber = rootNumber,
+            jumpPaths = jumpPaths,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
             viewModel = viewModel,
@@ -651,6 +678,7 @@ private fun IfBlockCard(
     path: String,
     block: AutomationAction.IfBlock,
     rootNumber: Int,
+    jumpPaths: List<String>,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     viewModel: AutomationViewModel,
@@ -663,7 +691,7 @@ private fun IfBlockCard(
             FlowNodeHeader(
                 path = path,
                 title = "IF",
-                summary = block.flowSummary(rootNumber),
+                summary = block.flowSummary(),
                 expanded = expanded,
                 accent = Color(0xFF6A4C93),
                 canMoveUp = canMoveUp,
@@ -725,6 +753,7 @@ private fun IfBlockCard(
                     pathPrefix = "$path-T",
                     actions = block.thenActions,
                     rootNumber = rootNumber,
+                    jumpPaths = jumpPaths,
                     blockId = block.id,
                     side = BranchSide.THEN,
                     viewModel = viewModel,
@@ -736,6 +765,7 @@ private fun IfBlockCard(
                     pathPrefix = "$path-E",
                     actions = block.elseActions,
                     rootNumber = rootNumber,
+                    jumpPaths = jumpPaths,
                     blockId = block.id,
                     side = BranchSide.ELSE,
                     viewModel = viewModel,
@@ -851,6 +881,7 @@ private fun BranchEditor(
     pathPrefix: String,
     actions: List<AutomationAction>,
     rootNumber: Int,
+    jumpPaths: List<String>,
     blockId: String,
     side: BranchSide,
     viewModel: AutomationViewModel,
@@ -882,6 +913,7 @@ private fun BranchEditor(
                 path = "$pathPrefix${index + 1}",
                 action = child,
                 rootNumber = rootNumber,
+                jumpPaths = jumpPaths,
                 canMoveUp = index > 0,
                 canMoveDown = index < actions.lastIndex,
                 viewModel = viewModel,
@@ -995,7 +1027,7 @@ private fun WaitCard(
 private fun JumpToCard(
     path: String,
     action: AutomationAction.JumpTo,
-    rootNumber: Int,
+    jumpPaths: List<String>,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onReplace: (AutomationAction) -> Unit,
@@ -1009,7 +1041,7 @@ private fun JumpToCard(
             FlowNodeHeader(
                 path = path,
                 title = action.flowTitle(),
-                summary = action.flowSummary(rootNumber),
+                summary = action.flowSummary(path),
                 expanded = expanded,
                 accent = Color(0xFF6A4C93),
                 canMoveUp = canMoveUp,
@@ -1020,24 +1052,37 @@ private fun JumpToCard(
                 onRemove = onRemove,
             )
             if (expanded) {
-                CommitNumberField(
-                    value = action.targetNumber.toString(),
-                    label = "移動先アクション番号",
+                CommitTextField(
+                    value = action.resolvedTargetPath(),
+                    label = "移動先（1, 2-T1 など）",
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 6.dp),
                     onCommit = { value ->
-                        value.toIntOrNull()?.takeIf { it >= 1 }?.let {
-                            onReplace(action.copy(targetNumber = it))
+                        val trimmed = value.trim()
+                        if (trimmed.isNotEmpty()) {
+                            onReplace(action.copy(targetPath = trimmed))
                         }
                     },
                 )
                 Text(
-                    "ルートの番号（1, 2, 3…）へ移動します",
+                    "分岐内も指定できます（例: 2-T1, 2-E2）",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(jumpPaths.filter { it != path }) { targetPath ->
+                        TextButton(onClick = {
+                            onReplace(action.copy(targetPath = targetPath))
+                        }) { Text(targetPath) }
+                    }
+                }
                 WaitWithJitterFields(
                     waitMs = action.waitAfterMs,
                     jitterMs = action.waitJitterMs,
@@ -1126,6 +1171,19 @@ private fun ActionCard(
                     onClick = onPickCoordinates,
                     modifier = Modifier.padding(top = 6.dp),
                 ) { Text("画面上で位置を指定") }
+                Text(
+                    text = when (action) {
+                        is AutomationAction.Tap ->
+                            "座標 (${action.x.roundToInt()}, ${action.y.roundToInt()})"
+                        is AutomationAction.Swipe ->
+                            "開始 (${action.startX.roundToInt()}, ${action.startY.roundToInt()})" +
+                                " → 終了 (${action.endX.roundToInt()}, ${action.endY.roundToInt()})"
+                        else -> ""
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

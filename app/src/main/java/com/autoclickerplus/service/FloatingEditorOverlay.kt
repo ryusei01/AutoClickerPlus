@@ -34,7 +34,9 @@ import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
+import com.autoclickerplus.model.collectActionPaths
 import com.autoclickerplus.model.jumpTargetLabel
+import com.autoclickerplus.model.resolvedTargetPath
 import kotlin.math.roundToInt
 
 data class FloatingEditorCallbacks(
@@ -52,6 +54,7 @@ data class FloatingEditorCallbacks(
     val onRemove: (String) -> Unit,
     val onMove: (String, Int) -> Unit,
     val onPickCoordinates: (String) -> Unit,
+    val onPickAllCoordinates: () -> Unit,
     val onPickColor: (String, String) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
@@ -201,6 +204,9 @@ class FloatingEditorOverlay(
 
     private fun addButtons() = LinearLayout(service).apply {
         orientation = LinearLayout.VERTICAL
+        addView(smallButton("全位置を一括指定", true) {
+            callbacks.onPickAllCoordinates()
+        })
         addView(LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(actionButton(R.drawable.ic_tap, "タップ", callbacks.onAddTap), rowButtonParams())
@@ -374,19 +380,32 @@ class FloatingEditorOverlay(
         action: AutomationAction.JumpTo,
     ) = LinearLayout(service).apply {
         val expanded = action.id in expandedDetailIds
-        val ownerNumber = path.takeWhile { it.isDigit() }.toIntOrNull() ?: 1
         orientation = LinearLayout.VERTICAL
         setPadding(dp(10), dp(8), dp(10), dp(8))
         background = roundedBackground(0xFF4A3A62.toInt(), dp(12).toFloat())
         addView(flowNodeHeader(path, action, expanded, index, siblingCount))
         if (expanded) {
-            addView(label(jumpTargetLabel(action.targetNumber, ownerNumber)))
-            addView(numberField("移動先アクション番号", action.targetNumber.toString()) { value ->
-                value.toIntOrNull()?.takeIf { it >= 1 }?.let {
-                    callbacks.onReplace(action.copy(targetNumber = it))
+            addView(label(jumpTargetLabel(action.resolvedTargetPath(), path)))
+            addView(textField("移動先（1, 2-T1 など）", action.resolvedTargetPath()) { value ->
+                val trimmed = value.trim()
+                if (trimmed.isNotEmpty()) {
+                    callbacks.onReplace(action.copy(targetPath = trimmed))
                 }
             })
-            addView(label("ルートの番号（1, 2, 3…）へ移動します"))
+            addView(label("分岐内も指定できます（例: 2-T1, 2-E2）"))
+            addView(HorizontalScrollView(service).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    config.collectActionPaths()
+                        .filter { it != path }
+                        .forEach { targetPath ->
+                            addView(smallButton(targetPath, true) {
+                                callbacks.onReplace(action.copy(targetPath = targetPath))
+                            })
+                        }
+                })
+            })
             addView(numberField(
                 "次の動作までの待機時間 ms",
                 action.waitAfterMs.toString(),
@@ -609,7 +628,7 @@ class FloatingEditorOverlay(
             })
             addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
         })
-        addView(label(action.flowSummary(path.takeWhile { it.isDigit() }.toIntOrNull() ?: 0)).apply {
+        addView(label(action.flowSummary(path)).apply {
             setOnClickListener { toggleExpanded(action.id) }
         })
     }
@@ -765,7 +784,7 @@ class FloatingEditorOverlay(
         is AutomationAction.IfBlock -> "条件分岐"
         is AutomationAction.BreakLoop -> "ループ終了"
         is AutomationAction.Wait -> "${action.durationMs}ms"
-        is AutomationAction.JumpTo -> jumpTargetLabel(action.targetNumber)
+        is AutomationAction.JumpTo -> jumpTargetLabel(action.resolvedTargetPath())
     }
 
     private fun makeDraggable(

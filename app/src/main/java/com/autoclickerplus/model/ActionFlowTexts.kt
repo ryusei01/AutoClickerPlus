@@ -11,7 +11,7 @@ fun AutomationAction.flowTitle(): String = when (this) {
     is AutomationAction.JumpTo -> "番号へ"
 }
 
-fun AutomationAction.flowSummary(fromNumber: Int = 0): String = when (this) {
+fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     is AutomationAction.Tap ->
         "(${x.roundToInt()}, ${y.roundToInt()})  → ${waitAfterMs}ms ±${waitJitterMs}"
     is AutomationAction.Swipe ->
@@ -25,7 +25,7 @@ fun AutomationAction.flowSummary(fromNumber: Int = 0): String = when (this) {
     is AutomationAction.BreakLoop -> "到達したら繰り返しを終了"
     is AutomationAction.Wait -> "${durationMs}ms待つ ±${waitJitterMs}ms"
     is AutomationAction.JumpTo ->
-        "${jumpTargetLabel(targetNumber, fromNumber)}  → ${waitAfterMs}ms ±${waitJitterMs}"
+        "${jumpTargetLabel(resolvedTargetPath(), fromPath)}  → ${waitAfterMs}ms ±${waitJitterMs}"
 }
 
 fun AutomationCondition.summary(): String = when (this) {

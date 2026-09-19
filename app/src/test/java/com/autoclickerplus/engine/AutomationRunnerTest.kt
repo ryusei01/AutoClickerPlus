@@ -610,6 +610,54 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun jumpToBranchPathExecutesNestedAction() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "root"
+                        point.x < 150f -> "then1"
+                        else -> "then2"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    thenActions = listOf(
+                        AutomationAction.JumpTo(targetPath = "2-T3"),
+                        AutomationAction.Tap(x = 80f, y = 10f, jitterPx = 0),
+                        AutomationAction.Tap(x = 180f, y = 10f, jitterPx = 0),
+                    ),
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("root", "then2"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun invalidJumpContinuesToNextAction() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(

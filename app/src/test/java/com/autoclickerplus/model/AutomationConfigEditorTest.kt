@@ -29,6 +29,29 @@ class AutomationConfigEditorTest {
     }
 
     @Test
+    fun collectPickableActionsIncludesNestedTapAndSwipe() {
+        val nestedTap = AutomationAction.Tap(id = "nested-tap")
+        val nestedSwipe = AutomationAction.Swipe(id = "nested-swipe")
+        val block = AutomationAction.IfBlock(
+            id = "if",
+            thenActions = listOf(nestedTap),
+            elseActions = listOf(nestedSwipe),
+        )
+        var config = AutomationConfig(actions = listOf(first, block, second))
+
+        val pickables = AutomationConfigEditor.collectPickableActions(config)
+
+        assertEquals(
+            listOf("1", "2-T1", "2-E1", "3"),
+            pickables.map { it.path },
+        )
+        assertEquals(
+            listOf("tap", "nested-tap", "nested-swipe", "swipe"),
+            pickables.map { it.action.id },
+        )
+    }
+
+    @Test
     fun replacementAndGlobalSettingsAreNormalized() {
         val config = AutomationConfigEditor.add(AutomationConfig(), first)
         val replaced = AutomationConfigEditor.replace(
@@ -107,8 +130,9 @@ class AutomationConfigEditorTest {
             AutomationAction.JumpTo(targetNumber = 0),
         ).actions.single() as AutomationAction.JumpTo
         assertEquals(1, jump.targetNumber)
-        assertEquals("2番へ進む", jumpTargetLabel(2, 1))
-        assertEquals("1番へ戻る", jumpTargetLabel(1, 3))
+        assertEquals("1", jump.targetPath)
+        assertEquals("2へ進む", jumpTargetLabel("2", "1"))
+        assertEquals("1へ戻る", jumpTargetLabel("1", "3"))
         val wait = AutomationConfigEditor.add(
             AutomationConfig(),
             AutomationAction.Wait(durationMs = 9_999_999L),

@@ -122,6 +122,9 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 onRepeatCount = { count ->
                     mutateConfig { AutomationConfigEditor.setRepeatCount(it, count) }
                 },
+                onReplaceConfig = { config ->
+                    replaceConfig(config)
+                },
             ),
         )
         activeService = this
@@ -240,6 +243,27 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             currentConfig = repository.config.first()
             overlay.updateConfig(currentConfig)
             overlay.showPicker(actionId)
+        }
+    }
+
+    private fun pickAllCoordinates() {
+        if (!::overlay.isInitialized) return
+        serviceScope.launch {
+            runner.stop()
+            currentConfig = repository.config.first()
+            overlay.updateConfig(currentConfig)
+            overlay.showAllPicker()
+        }
+    }
+
+    private fun replaceConfig(config: AutomationConfig) {
+        serviceScope.launch {
+            configMutex.withLock {
+                runner.stop()
+                currentConfig = config
+                overlay.updateConfig(config)
+                repository.save(config)
+            }
         }
     }
 
@@ -379,6 +403,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         fun requestCoordinatePick(actionId: String): Boolean {
             val service = activeService ?: return false
             service.pickCoordinates(actionId)
+            return true
+        }
+
+        fun requestBulkCoordinatePick(): Boolean {
+            val service = activeService ?: return false
+            service.pickAllCoordinates()
             return true
         }
 

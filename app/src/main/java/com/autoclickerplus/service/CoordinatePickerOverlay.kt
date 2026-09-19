@@ -10,20 +10,31 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.text.TextUtils
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoclickerplus.R
 import com.autoclickerplus.model.AutomationAction
+import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.AutomationConfigEditor
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 class CoordinatePickerOverlay(private val service: AccessibilityService) {
     private val windowManager = service.getSystemService(WindowManager::class.java)
     private val markerWindows = mutableListOf<MarkerWindow>()
+    private var bulkMarkers = mutableListOf<BulkMarker>()
     private var controlBar: View? = null
     private var lineView: SwipeLineView? = null
+    private var bulkLineView: BulkSwipeLinesView? = null
     private var action: AutomationAction? = null
     private var sequenceNumber: String = ""
+    private var bulkConfig: AutomationConfig? = null
+    private var bulkOnDone: ((AutomationConfig) -> Unit)? = null
+    private var bulkOnCancel: (() -> Unit)? = null
 
     val isVisible: Boolean get() = markerWindows.isNotEmpty() || controlBar != null
 
@@ -44,6 +55,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     color = Color.rgb(211, 47, 47),
                     centerX = action.x,
                     centerY = action.y,
+                    onMoved = ::updateLine,
                 )
             }
             is AutomationAction.Swipe -> {
@@ -52,12 +64,14 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     color = Color.rgb(25, 118, 210),
                     centerX = action.startX,
                     centerY = action.startY,
+                    onMoved = ::updateLine,
                 )
                 markerWindows += addMarker(
                     label = "${sequenceNumber}E",
                     color = Color.rgb(46, 125, 50),
                     centerX = action.endX,
                     centerY = action.endY,
+                    onMoved = ::updateLine,
                 )
                 showSwipeLine()
             }
@@ -71,9 +85,84 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                 hide()
                 onDone(updated)
             },
-            onCancel = onCancel,
+            onCancel = {
+                hide()
+                onCancel()
+            },
         )
         updateLine()
+    }
+
+    fun showAll(
+        config: AutomationConfig,
+        onDone: (AutomationConfig) -> Unit,
+        onCancel: () -> Unit,
+    ) {
+        hide()
+        val pickables = AutomationConfigEditor.collectPickableActions(config)
+        if (pickables.isEmpty()) {
+            onCancel()
+            return
+        }
+        bulkConfig = config
+        bulkOnDone = onDone
+        bulkOnCancel = onCancel
+
+        pickables.forEach { pickable ->
+            when (val pickableAction = pickable.action) {
+                is AutomationAction.Tap -> {
+                    val marker = addMarker(
+                        label = pickable.path,
+                        color = Color.rgb(211, 47, 47),
+                        centerX = pickableAction.x,
+                        centerY = pickableAction.y,
+                        onMoved = ::updateBulkLines,
+                    )
+                    markerWindows += marker
+                    bulkMarkers += BulkMarker(
+                        actionId = pickableAction.id,
+                        role = BulkMarkerRole.TAP,
+                        window = marker,
+                    )
+                }
+                is AutomationAction.Swipe -> {
+                    val start = addMarker(
+                        label = "${pickable.path}S",
+                        color = Color.rgb(25, 118, 210),
+                        centerX = pickableAction.startX,
+                        centerY = pickableAction.startY,
+                        onMoved = ::updateBulkLines,
+                    )
+                    val end = addMarker(
+                        label = "${pickable.path}E",
+                        color = Color.rgb(46, 125, 50),
+                        centerX = pickableAction.endX,
+                        centerY = pickableAction.endY,
+                        onMoved = ::updateBulkLines,
+                    )
+                    markerWindows += start
+                    markerWindows += end
+                    bulkMarkers += BulkMarker(pickableAction.id, BulkMarkerRole.SWIPE_START, start)
+                    bulkMarkers += BulkMarker(pickableAction.id, BulkMarkerRole.SWIPE_END, end)
+                }
+                else -> Unit
+            }
+        }
+        showBulkSwipeLines()
+        showControlBar(
+            title = service.getString(R.string.bulk_picker_title),
+            onDone = {
+                val updated = buildUpdatedConfig() ?: return@showControlBar
+                hide()
+                onDone(updated)
+            },
+            onCancel = {
+                val cancel = bulkOnCancel
+                hide()
+                cancel?.invoke()
+            },
+        )
+        updateBulkLines()
     }
 
     fun showColor(
@@ -98,19 +187,28 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                 hide()
                 onDone(x, y)
             },
-            onCancel = onCancel,
+            onCancel = {
+                hide()
+                onCancel()
+            },
         )
     }
 
     fun hide() {
         markerWindows.forEach { runCatching { windowManager.removeView(it.view) } }
         markerWindows.clear()
+        bulkMarkers.clear()
         controlBar?.let { runCatching { windowManager.removeView(it) } }
         controlBar = null
         lineView?.let { runCatching { windowManager.removeView(it) } }
         lineView = null
+        bulkLineView?.let { runCatching { windowManager.removeView(it) } }
+        bulkLineView = null
         action = null
         sequenceNumber = ""
+        bulkConfig = null
+        bulkOnDone = null
+        bulkOnCancel = null
     }
 
     private fun addMarker(
@@ -118,12 +216,13 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         color: Int,
         centerX: Float,
         centerY: Float,
+        onMoved: (() -> Unit)? = null,
     ): MarkerWindow {
         val size = dp(54)
         val metrics = service.resources.displayMetrics
         val marker = TextView(service).apply {
             text = label
-            textSize = if (label.length > 1) 15f else 19f
+            textSize = if (label.length > 2) 13f else if (label.length > 1) 15f else 19f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = roundedBackground(color, size / 2f)
@@ -140,7 +239,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             x = (centerX - size / 2f).roundToInt().coerceIn(0, metrics.widthPixels - size)
             y = (centerY - size / 2f).roundToInt().coerceIn(0, metrics.heightPixels - size)
         }
-        makeMarkerDraggable(marker, params, size)
+        makeMarkerDraggable(marker, params, size, onMoved)
         windowManager.addView(marker, params)
         return MarkerWindow(marker, params, size)
     }
@@ -150,39 +249,64 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         onDone: () -> Unit,
         onCancel: () -> Unit,
     ) {
+        val metrics = service.resources.displayMetrics
+        val maxWidth = metrics.widthPixels - dp(16)
         val bar = LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(8), dp(4), dp(8), dp(4))
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             background = roundedBackground(0xF2292730.toInt(), dp(16).toFloat())
+            minimumWidth = dp(220)
         }
         val dragHandle = TextView(service).apply {
             text = "↕"
-            textSize = 24f
+            textSize = 22f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(0, 0, 0, dp(4))
             contentDescription = "位置指定パネルを移動"
         }
-        bar.addView(dragHandle)
-        bar.addView(TextView(service).apply {
+        val titleView = TextView(service).apply {
             text = title
             setTextColor(Color.WHITE)
-            setPadding(dp(8), 0, dp(8), 0)
-        })
-        bar.addView(Button(service).apply {
+            textSize = 14f
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER
+        }
+        val buttonRow = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val cancelButton = Button(service).apply {
             text = "キャンセル"
-            setOnClickListener {
-                hide()
-                onCancel()
+            textSize = 14f
+            setOnClickListener { onCancel() }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(0, 0, dp(4), 0)
             }
-        })
-        bar.addView(Button(service).apply {
+        }
+        val doneButton = Button(service).apply {
             text = "決定"
+            textSize = 14f
             setOnClickListener { onDone() }
-        })
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(dp(4), 0, 0, 0)
+            }
+        }
+        buttonRow.addView(cancelButton)
+        buttonRow.addView(doneButton)
+        bar.addView(dragHandle)
+        bar.addView(titleView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
+        bar.addView(buttonRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
         val params = overlayParams(
-            width = WindowManager.LayoutParams.WRAP_CONTENT,
+            width = maxWidth.coerceAtMost(dp(360)),
             height = WindowManager.LayoutParams.WRAP_CONTENT,
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -209,10 +333,24 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         lineView = view
     }
 
+    private fun showBulkSwipeLines() {
+        val view = BulkSwipeLinesView(service)
+        val params = overlayParams(
+            width = WindowManager.LayoutParams.MATCH_PARENT,
+            height = WindowManager.LayoutParams.MATCH_PARENT,
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+        )
+        windowManager.addView(view, params)
+        bulkLineView = view
+    }
+
     private fun makeMarkerDraggable(
         marker: View,
         params: WindowManager.LayoutParams,
         size: Int,
+        onMoved: (() -> Unit)? = null,
     ) {
         val metrics = service.resources.displayMetrics
         var offsetX = 0f
@@ -230,7 +368,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     params.y = (event.rawY - offsetY).roundToInt()
                         .coerceIn(0, metrics.heightPixels - size)
                     windowManager.updateViewLayout(marker, params)
-                    updateLine()
+                    onMoved?.invoke()
                     true
                 }
                 MotionEvent.ACTION_UP -> {
@@ -304,14 +442,57 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         }
     }
 
+    private fun buildUpdatedConfig(): AutomationConfig? {
+        val original = bulkConfig ?: return null
+        var updated = original
+        bulkMarkers.groupBy { it.actionId }.forEach { (actionId, markers) ->
+            val current = AutomationConfigEditor.findAction(updated, actionId) ?: return@forEach
+            val replaced = when (current) {
+                is AutomationAction.Tap -> {
+                    val marker = markers.single { it.role == BulkMarkerRole.TAP }
+                    current.copy(x = marker.window.centerX, y = marker.window.centerY)
+                }
+                is AutomationAction.Swipe -> {
+                    val start = markers.first { it.role == BulkMarkerRole.SWIPE_START }
+                    val end = markers.first { it.role == BulkMarkerRole.SWIPE_END }
+                    current.copy(
+                        startX = start.window.centerX,
+                        startY = start.window.centerY,
+                        endX = end.window.centerX,
+                        endY = end.window.centerY,
+                    )
+                }
+                else -> return@forEach
+            }
+            updated = AutomationConfigEditor.replace(updated, replaced)
+        }
+        return updated
+    }
+
     private fun updateLine() {
-        if (markerWindows.size != 2) return
+        if (markerWindows.size != 2 || bulkConfig != null) return
         lineView?.setPoints(
             markerWindows[0].centerX,
             markerWindows[0].centerY,
             markerWindows[1].centerX,
             markerWindows[1].centerY,
         )
+    }
+
+    private fun updateBulkLines() {
+        val segments = bulkMarkers
+            .groupBy { it.actionId }
+            .mapNotNull { (_, markers) ->
+                val start = markers.firstOrNull { it.role == BulkMarkerRole.SWIPE_START } ?: return@mapNotNull null
+                val end = markers.firstOrNull { it.role == BulkMarkerRole.SWIPE_END } ?: return@mapNotNull null
+                SwipeSegment(
+                    start.window.centerX,
+                    start.window.centerY,
+                    end.window.centerX,
+                    end.window.centerY,
+                )
+            }
+        bulkLineView?.setSegments(segments)
     }
 
     private fun overlayParams(width: Int, height: Int, flags: Int) =
@@ -331,6 +512,18 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     private fun dp(value: Int): Int =
         (value * service.resources.displayMetrics.density).roundToInt()
 
+    private enum class BulkMarkerRole {
+        TAP,
+        SWIPE_START,
+        SWIPE_END,
+    }
+
+    private data class BulkMarker(
+        val actionId: String,
+        val role: BulkMarkerRole,
+        val window: MarkerWindow,
+    )
+
     private data class MarkerWindow(
         val view: View,
         val params: WindowManager.LayoutParams,
@@ -339,6 +532,13 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         val centerX: Float get() = params.x + size / 2f
         val centerY: Float get() = params.y + size / 2f
     }
+
+    private data class SwipeSegment(
+        val startX: Float,
+        val startY: Float,
+        val endX: Float,
+        val endY: Float,
+    )
 
     private class SwipeLineView(service: AccessibilityService) : View(service) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -361,21 +561,62 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            drawArrowLine(canvas, startX, startY, endX, endY, paint)
+        }
+    }
+
+    private class BulkSwipeLinesView(service: AccessibilityService) : View(service) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(180, 255, 193, 7)
+            strokeWidth = service.resources.displayMetrics.density * 3f
+            style = Paint.Style.STROKE
+        }
+        private var segments = emptyList<SwipeSegment>()
+
+        fun setSegments(segments: List<SwipeSegment>) {
+            this.segments = segments
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            segments.forEach { segment ->
+                drawArrowLine(
+                    canvas,
+                    segment.startX,
+                    segment.startY,
+                    segment.endX,
+                    segment.endY,
+                    paint,
+                )
+            }
+        }
+    }
+
+    private companion object {
+        fun drawArrowLine(
+            canvas: Canvas,
+            startX: Float,
+            startY: Float,
+            endX: Float,
+            endY: Float,
+            paint: Paint,
+        ) {
             canvas.drawLine(startX, startY, endX, endY, paint)
-            val angle = kotlin.math.atan2(endY - startY, endX - startX)
-            val arrow = resources.displayMetrics.density * 14f
+            val angle = atan2(endY - startY, endX - startX)
+            val arrow = paint.strokeWidth * 3.5f
             canvas.drawLine(
                 endX,
                 endY,
-                endX - arrow * kotlin.math.cos(angle - 0.55f),
-                endY - arrow * kotlin.math.sin(angle - 0.55f),
+                endX - arrow * cos(angle - 0.55f),
+                endY - arrow * sin(angle - 0.55f),
                 paint,
             )
             canvas.drawLine(
                 endX,
                 endY,
-                endX - arrow * kotlin.math.cos(angle + 0.55f),
-                endY - arrow * kotlin.math.sin(angle + 0.55f),
+                endX - arrow * cos(angle + 0.55f),
+                endY - arrow * sin(angle + 0.55f),
                 paint,
             )
         }

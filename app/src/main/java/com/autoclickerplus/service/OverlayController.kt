@@ -40,6 +40,7 @@ data class OverlayCallbacks(
     val onMove: (String, Int) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
+    val onReplaceConfig: (AutomationConfig) -> Unit,
 )
 
 class OverlayController(
@@ -76,6 +77,7 @@ class OverlayController(
                 onRemove = callbacks.onRemove,
                 onMove = callbacks.onMove,
                 onPickCoordinates = ::showPicker,
+                onPickAllCoordinates = ::showAllPicker,
                 onPickColor = callbacks.onPickColor,
                 onRepeatMode = callbacks.onRepeatMode,
                 onRepeatCount = callbacks.onRepeatCount,
@@ -158,6 +160,30 @@ class OverlayController(
         windowManager.addView(panel, params)
         controls = panel
         statusLabel = status
+    }
+
+    fun showAllPicker() {
+        val pickables = AutomationConfigEditor.collectPickableActions(config)
+        if (pickables.isEmpty()) {
+            android.widget.Toast.makeText(
+                service,
+                service.getString(R.string.bulk_picker_empty),
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            editor.show(config)
+            return
+        }
+        removeControls()
+        editor.hide()
+        picker.showAll(
+            config = config,
+            onDone = { updated ->
+                callbacks.onReplaceConfig(updated)
+                config = updated
+                editor.show(config)
+            },
+            onCancel = { editor.show(config) },
+        )
     }
 
     fun showPicker(actionId: String, removeOnCancel: Boolean = false) {

@@ -5,6 +5,8 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
+import com.autoclickerplus.model.resolveJumpTarget
+import com.autoclickerplus.model.resolvedTargetPath
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -158,7 +160,12 @@ class AutomationRunner(
         var loop = 0
         while (loop < totalLoops) {
             try {
-                executeActions(config.actions, bounds, allowJump = true)
+                executeActions(
+                    actions = config.actions,
+                    rootActions = config.actions,
+                    bounds = bounds,
+                    allowJump = true,
+                )
             } catch (_: LoopBreakException) {
                 return
             }
@@ -171,29 +178,72 @@ class AutomationRunner(
 
     private suspend fun executeActions(
         actions: List<AutomationAction>,
+        rootActions: List<AutomationAction>,
         bounds: ScreenBounds,
         allowJump: Boolean,
+        startIndex: Int = 0,
     ): BranchOutcome {
-        var index = 0
+        var currentActions = actions
+        var index = startIndex
         var jumps = 0
-        while (index < actions.size) {
-            val action = actions[index]
-            val outcome = executeAction(action, bounds)
+        while (index < currentActions.size) {
+            val action = currentActions[index]
+            val outcome = executeAction(action, rootActions, bounds)
             wait(randomizer.waitMs(action.waitAfterMs, action.waitJitterMs))
             when (outcome) {
                 BranchOutcome.Continue -> index++
                 is BranchOutcome.Jump -> {
                     if (!allowJump) return outcome
-                    val target = outcome.actionNumber - 1
-                    if (target in actions.indices) {
+                    val target = resolveJumpTarget(rootActions, outcome.targetPath)
+                    if (target == null) {
+                        index++
+                        continue
+                    }
+                    jumps++
+                    if (jumps > MAX_JUMPS_PER_LOOP) {
+                        throw JumpLimitException()
+                    }
+                    if (target.actions === currentActions) {
+                        index = target.index
+                        continue
+                    }
+                    if (target.actions === rootActions) {
+                        currentActions = rootActions
+                        index = target.index
+                        continue
+                    }
+                    var nestedOutcome = executeActions(
+                        actions = target.actions,
+                        rootActions = rootActions,
+                        bounds = bounds,
+                        allowJump = false,
+                        startIndex = target.index,
+                    )
+                    while (nestedOutcome is BranchOutcome.Jump) {
+                        val next = resolveJumpTarget(rootActions, nestedOutcome.targetPath) ?: break
                         jumps++
                         if (jumps > MAX_JUMPS_PER_LOOP) {
                             throw JumpLimitException()
                         }
-                        index = target
-                    } else {
-                        index++
+                        nestedOutcome = if (next.actions === rootActions) {
+                            currentActions = rootActions
+                            index = next.index
+                            BranchOutcome.Continue
+                        } else {
+                            executeActions(
+                                actions = next.actions,
+                                rootActions = rootActions,
+                                bounds = bounds,
+                                allowJump = false,
+                                startIndex = next.index,
+                            )
+                        }
                     }
+                    if (nestedOutcome is BranchOutcome.Jump) {
+                        return nestedOutcome
+                    }
+                    currentActions = rootActions
+                    index = target.rootIndexAfter
                 }
             }
         }
@@ -202,6 +252,7 @@ class AutomationRunner(
 
     private suspend fun executeAction(
         action: AutomationAction,
+        rootActions: List<AutomationAction>,
         bounds: ScreenBounds,
     ): BranchOutcome {
         when (action) {
@@ -225,8 +276,9 @@ class AutomationRunner(
             is AutomationAction.IfBlock -> {
                 val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
                 val branchOutcome = executeActions(
-                    if (matched) action.thenActions else action.elseActions,
-                    bounds,
+                    actions = if (matched) action.thenActions else action.elseActions,
+                    rootActions = rootActions,
+                    bounds = bounds,
                     allowJump = false,
                 )
                 if (branchOutcome is BranchOutcome.Jump) {
@@ -235,14 +287,14 @@ class AutomationRunner(
             }
             is AutomationAction.BreakLoop -> throw LoopBreakException()
             is AutomationAction.Wait -> wait(randomizer.waitMs(action.durationMs, action.waitJitterMs))
-            is AutomationAction.JumpTo -> return BranchOutcome.Jump(action.targetNumber)
+            is AutomationAction.JumpTo -> return BranchOutcome.Jump(action.resolvedTargetPath())
         }
         return BranchOutcome.Continue
     }
 
     private sealed class BranchOutcome {
         data object Continue : BranchOutcome()
-        data class Jump(val actionNumber: Int) : BranchOutcome()
+        data class Jump(val targetPath: String) : BranchOutcome()
     }
 
     private class GestureFailedException : RuntimeException()

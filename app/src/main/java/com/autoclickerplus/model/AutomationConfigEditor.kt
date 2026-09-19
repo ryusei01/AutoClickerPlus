@@ -1,6 +1,14 @@
 package com.autoclickerplus.model
 
+data class PickableAction(
+    val path: String,
+    val action: AutomationAction,
+)
+
 object AutomationConfigEditor {
+    fun collectPickableActions(config: AutomationConfig): List<PickableAction> =
+        collectPickableActions(config.actions)
+
     fun add(config: AutomationConfig, action: AutomationAction): AutomationConfig =
         config.copy(actions = config.actions + action).normalized()
 
@@ -180,6 +188,26 @@ object AutomationConfigEditor {
             }
         }
         return null
+    }
+
+    private fun collectPickableActions(
+        actions: List<AutomationAction>,
+        prefix: String = "",
+    ): List<PickableAction> {
+        val result = mutableListOf<PickableAction>()
+        actions.forEachIndexed { index, action ->
+            val path = if (prefix.isEmpty()) "${index + 1}" else "$prefix${index + 1}"
+            when (action) {
+                is AutomationAction.Tap, is AutomationAction.Swipe ->
+                    result += PickableAction(path, action)
+                is AutomationAction.IfBlock -> {
+                    result += collectPickableActions(action.thenActions, "$path-T")
+                    result += collectPickableActions(action.elseActions, "$path-E")
+                }
+                else -> Unit
+            }
+        }
+        return result
     }
 
     private fun findPath(
