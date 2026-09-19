@@ -308,7 +308,7 @@ class FloatingEditorOverlay(
                     addView(LinearLayout(service).apply {
                         orientation = LinearLayout.HORIZONTAL
                         addView(smallButton(
-                            if (action.fullScroll) "すばやくスワイプ: ON" else "すばやくスワイプ: OFF",
+                            if (action.fullScroll) "端までスクロール: ON" else "端までスクロール: OFF",
                             true,
                         ) {
                             callbacks.onReplace(action.copy(fullScroll = !action.fullScroll))

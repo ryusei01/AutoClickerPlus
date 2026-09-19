@@ -1229,7 +1229,7 @@ private fun ActionCard(
                         TextButton(onClick = {
                             onReplace(action.copy(fullScroll = !action.fullScroll))
                         }) {
-                            Text(if (action.fullScroll) "すばやくスワイプ: ON" else "すばやくスワイプ: OFF")
+                            Text(if (action.fullScroll) "端までスクロール: ON" else "端までスクロール: OFF")
                         }
                         TextButton(onClick = {
                             onReplace(action.copy(stopAtEnd = !action.stopAtEnd))

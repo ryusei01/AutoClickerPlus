@@ -15,7 +15,7 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     is AutomationAction.Tap ->
         "(${x.roundToInt()}, ${y.roundToInt()})  → ${waitAfterMs}ms ±${waitJitterMs}"
     is AutomationAction.Swipe -> {
-        val full = if (fullScroll) " すばやく" else ""
+        val full = if (fullScroll) " 端まで" else ""
         "(${startX.roundToInt()}, ${startY.roundToInt()}) → " +
             "(${endX.roundToInt()}, ${endY.roundToInt()})  ${durationMs}ms$full"
     }

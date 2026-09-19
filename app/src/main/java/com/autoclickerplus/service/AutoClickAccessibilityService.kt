@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -40,6 +41,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private lateinit var repository: AutomationRepository
     private lateinit var runner: AutomationRunner
     private lateinit var conditionEvaluator: AccessibilityConditionEvaluator
+    private lateinit var scroller: AccessibilityScroller
     private lateinit var overlay: OverlayController
     private val configMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -49,6 +51,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         super.onServiceConnected()
         repository = AutomationRepository(applicationContext)
         conditionEvaluator = AccessibilityConditionEvaluator(this)
+        scroller = AccessibilityScroller(this)
         runner = AutomationRunner(
             scope = serviceScope,
             executor = this,
@@ -163,6 +166,18 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 .addStroke(GestureDescription.StrokeDescription(path, 0L, 50L))
                 .build(),
         )
+    }
+
+    override suspend fun scrollToEnd(start: GesturePoint, end: GesturePoint): Boolean {
+        overlay.hideTransientOverlays()
+        if (scroller.scrollToEnd(start, end)) return true
+        repeat(FALLBACK_SWIPE_COUNT) { index ->
+            if (!swipe(start, end, FALLBACK_SWIPE_DURATION_MS, false)) {
+                return index > 0
+            }
+            delay(FALLBACK_SWIPE_GAP_MS)
+        }
+        return true
     }
 
     override suspend fun swipe(
@@ -387,6 +402,9 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
     companion object {
         private const val HOLD_AT_END_MS = 180L
+        private const val FALLBACK_SWIPE_COUNT = 8
+        private const val FALLBACK_SWIPE_DURATION_MS = 250L
+        private const val FALLBACK_SWIPE_GAP_MS = 40L
 
         @Volatile
         private var activeService: AutoClickAccessibilityService? = null

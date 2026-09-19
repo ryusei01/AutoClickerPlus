@@ -114,7 +114,7 @@ class AutomationRunnerTest {
     }
 
     @Test
-    fun fullScrollUsesFlingInsteadOfHeldSwipe() = runTest {
+    fun fullScrollUsesAccessibilityScrollToEnd() = runTest {
         val calls = mutableListOf<String>()
         val executor = object : GestureExecutor {
             override suspend fun tap(point: GesturePoint): Boolean = true
@@ -129,8 +129,8 @@ class AutomationRunnerTest {
                 return true
             }
 
-            override suspend fun fling(start: GesturePoint, end: GesturePoint): Boolean {
-                calls += "fling"
+            override suspend fun scrollToEnd(start: GesturePoint, end: GesturePoint): Boolean {
+                calls += "scrollToEnd"
                 return true
             }
         }
@@ -157,7 +157,7 @@ class AutomationRunnerTest {
         runner.start(config, ScreenBounds(1080, 2400))
         advanceUntilIdle()
 
-        assertEquals(listOf("fling"), calls)
+        assertEquals(listOf("scrollToEnd"), calls)
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 
