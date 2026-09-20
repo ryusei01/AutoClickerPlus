@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -219,7 +220,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         onMoved: (() -> Unit)? = null,
     ): MarkerWindow {
         val size = dp(54)
-        val metrics = service.resources.displayMetrics
+        val bounds = overlayBounds()
         val marker = TextView(service).apply {
             text = label
             textSize = if (label.length > 2) 13f else if (label.length > 1) 15f else 19f
@@ -233,11 +234,12 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             height = size,
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (centerX - size / 2f).roundToInt().coerceIn(0, metrics.widthPixels - size)
-            y = (centerY - size / 2f).roundToInt().coerceIn(0, metrics.heightPixels - size)
+            x = markerPositionForCenter(centerX, size, bounds.width)
+            y = markerPositionForCenter(centerY, size, bounds.height)
         }
         makeMarkerDraggable(marker, params, size, onMoved)
         windowManager.addView(marker, params)
@@ -249,8 +251,8 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         onDone: () -> Unit,
         onCancel: () -> Unit,
     ) {
-        val metrics = service.resources.displayMetrics
-        val maxWidth = metrics.widthPixels - dp(16)
+        val bounds = overlayBounds()
+        val maxWidth = bounds.width - dp(16)
         val bar = LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -352,7 +354,6 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         size: Int,
         onMoved: (() -> Unit)? = null,
     ) {
-        val metrics = service.resources.displayMetrics
         var offsetX = 0f
         var offsetY = 0f
         marker.setOnTouchListener { _, event ->
@@ -363,10 +364,11 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    val bounds = overlayBounds()
                     params.x = (event.rawX - offsetX).roundToInt()
-                        .coerceIn(0, metrics.widthPixels - size)
+                        .coerceIn(markerPositionRange(bounds.width, size))
                     params.y = (event.rawY - offsetY).roundToInt()
-                        .coerceIn(0, metrics.heightPixels - size)
+                        .coerceIn(markerPositionRange(bounds.height, size))
                     windowManager.updateViewLayout(marker, params)
                     onMoved?.invoke()
                     true
@@ -386,7 +388,6 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         bar: View,
         params: WindowManager.LayoutParams,
     ) {
-        val metrics = service.resources.displayMetrics
         var downRawX = 0f
         var downRawY = 0f
         var downX = 0
@@ -407,10 +408,11 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    val bounds = overlayBounds()
                     params.x = (downX + (event.rawX - downRawX).roundToInt())
-                        .coerceIn(0, (metrics.widthPixels - bar.width).coerceAtLeast(0))
+                        .coerceIn(0, (bounds.width - bar.width).coerceAtLeast(0))
                     params.y = (downY + (event.rawY - downRawY).roundToInt())
-                        .coerceIn(0, (metrics.heightPixels - bar.height).coerceAtLeast(0))
+                        .coerceIn(0, (bounds.height - bar.height).coerceAtLeast(0))
                     windowManager.updateViewLayout(bar, params)
                     true
                 }
@@ -509,8 +511,35 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         cornerRadius = radius
     }
 
+    @Suppress("DEPRECATION")
+    private fun overlayBounds(): OverlayBounds =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.currentWindowMetrics.bounds
+            OverlayBounds(bounds.width(), bounds.height())
+        } else {
+            val metrics = service.resources.displayMetrics
+            OverlayBounds(metrics.widthPixels, metrics.heightPixels)
+        }
+
+    private fun markerPositionForCenter(center: Float, markerSize: Int, screenSize: Int): Int =
+        (center - markerSize / 2f).roundToInt()
+            .coerceIn(markerPositionRange(screenSize, markerSize))
+
+    private fun markerPositionRange(screenSize: Int, markerSize: Int): IntRange {
+        val half = markerSize / 2f
+        val min = (-half).roundToInt()
+        val max = (screenSize.coerceAtLeast(1) - 1 - half).roundToInt()
+            .coerceAtLeast(min)
+        return min..max
+    }
+
     private fun dp(value: Int): Int =
         (value * service.resources.displayMetrics.density).roundToInt()
+
+    private data class OverlayBounds(
+        val width: Int,
+        val height: Int,
+    )
 
     private enum class BulkMarkerRole {
         TAP,

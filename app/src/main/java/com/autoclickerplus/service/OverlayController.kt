@@ -93,9 +93,9 @@ class OverlayController(
         if (controls != null || editor.isVisible || picker.isVisible) return
 
         val panel = LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(6), dp(4), dp(6), dp(4))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
             background = roundedBackground(0xF2292730.toInt(), dp(16).toFloat())
         }
         val dragHandle = TextView(service).apply {
@@ -103,18 +103,19 @@ class OverlayController(
             textSize = 24f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(0, dp(4), 0, dp(4))
             contentDescription = "パネルを移動"
         }
         val actions = LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             visibility = if (collapsed) View.GONE else View.VISIBLE
         }
         val status = TextView(service).apply {
             text = runnerState.label
             setTextColor(Color.WHITE)
-            setPadding(dp(6), 0, dp(6), 0)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(4))
         }
         actions.addView(status)
         actions.addView(iconButton(R.drawable.ic_play, "開始", callbacks.onStart))
