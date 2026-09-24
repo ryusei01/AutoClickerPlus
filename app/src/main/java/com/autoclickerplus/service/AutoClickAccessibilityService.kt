@@ -343,9 +343,10 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                                 condition.copy(x = x, y = y, argb = color),
                             )
                         }
-                        overlay.showEditor()
+                        overlay.showEditor(restoreScrollToActionId = ifBlockId)
                     }
                 },
+                restoreScrollToActionId = ifBlockId,
             )
         }
     }
@@ -370,29 +371,31 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 top = region?.top ?: bounds.height / 4,
                 right = region?.right ?: bounds.width * 3 / 4,
                 bottom = region?.bottom ?: bounds.height * 3 / 4,
-            ) { left, top, right, bottom ->
-                serviceScope.launch {
-                    updateConfig { config ->
-                        val latestBlock = AutomationConfigEditor.findAction(config, ifBlockId)
-                            as? AutomationAction.IfBlock ?: return@updateConfig config
-                        val latest = latestBlock.conditions.firstOrNull { it.id == conditionId }
-                            ?: return@updateConfig config
-                        AutomationConfigEditor.replaceCondition(
-                            config,
-                            ifBlockId,
-                            latest.withRegion(
-                                ScreenRegion(
-                                    left = left,
-                                    top = top,
-                                    right = right,
-                                    bottom = bottom,
+                restoreScrollToActionId = ifBlockId,
+                onDone = { left, top, right, bottom ->
+                    serviceScope.launch {
+                        updateConfig { config ->
+                            val latestBlock = AutomationConfigEditor.findAction(config, ifBlockId)
+                                as? AutomationAction.IfBlock ?: return@updateConfig config
+                            val latest = latestBlock.conditions.firstOrNull { it.id == conditionId }
+                                ?: return@updateConfig config
+                            AutomationConfigEditor.replaceCondition(
+                                config,
+                                ifBlockId,
+                                latest.withRegion(
+                                    ScreenRegion(
+                                        left = left,
+                                        top = top,
+                                        right = right,
+                                        bottom = bottom,
+                                    ),
                                 ),
-                            ),
-                        )
+                            )
+                        }
+                        overlay.showEditor(restoreScrollToActionId = ifBlockId)
                     }
-                    overlay.showEditor()
-                }
-            }
+                },
+            )
         }
     }
 

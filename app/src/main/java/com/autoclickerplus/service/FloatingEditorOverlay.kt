@@ -88,11 +88,16 @@ class FloatingEditorOverlay(
     private val ifTabById = mutableMapOf<String, Int>()
     private var rendering = false
     private var pendingScrollActionId: String? = null
+    private var retainedScrollY = 0
 
     val isVisible: Boolean get() = root != null
 
-    fun show(config: AutomationConfig) {
+    fun show(config: AutomationConfig, restoreScrollToActionId: String? = null) {
         this.config = config
+        if (restoreScrollToActionId != null) {
+            expandedDetailIds += restoreScrollToActionId
+            pendingScrollActionId = restoreScrollToActionId
+        }
         if (root != null) {
             render()
             return
@@ -187,12 +192,13 @@ class FloatingEditorOverlay(
 
     fun hide() {
         commitFocusedField()
+        retainedScrollY = scrollView?.scrollY ?: retainedScrollY
         root?.let { runCatching { windowManager.removeView(it) } }
         root = null
         scrollView = null
         content = null
         params = null
-        pendingScrollActionId = null
+        // pendingScrollActionId は修正戻り用に残すことがあるので消さない
     }
 
     private fun render() {
@@ -200,7 +206,7 @@ class FloatingEditorOverlay(
         val scroll = scrollView
         if (rendering) return
         rendering = true
-        val savedScrollY = scroll?.scrollY ?: 0
+        val savedScrollY = scroll?.scrollY?.takeIf { it > 0 } ?: retainedScrollY
         try {
             commitFocusedField()
             renderBody(body)
@@ -212,8 +218,10 @@ class FloatingEditorOverlay(
         scroll?.post {
             if (scrollToId != null) {
                 scrollActionIntoView(scrollToId)
+                retainedScrollY = scroll.scrollY
             } else {
                 scroll.scrollTo(0, savedScrollY)
+                retainedScrollY = scroll.scrollY
             }
         }
     }

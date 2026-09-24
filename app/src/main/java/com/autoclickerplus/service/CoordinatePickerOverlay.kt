@@ -463,16 +463,9 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         centerY: Float,
         onMoved: (() -> Unit)? = null,
     ): MarkerWindow {
-        val size = dp(54)
+        val size = dp(64)
         val screen = service.overlayScreenBounds()
-        val marker = TextView(service).apply {
-            text = label
-            textSize = if (label.length > 2) 13f else if (label.length > 1) 15f else 19f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = roundedBackground(color, size / 2f)
-            contentDescription = "アクション${label}の位置"
-        }
+        val marker = PositionMarkerView(service, label, color)
         val params = overlayParams(
             width = size,
             height = size,
@@ -841,6 +834,67 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         val endX: Float,
         val endY: Float,
     )
+
+    /** 半透明リング＋中心クロス。実際に押す点が真ん中だと分かる */
+    private class PositionMarkerView(
+        service: AccessibilityService,
+        private val label: String,
+        color: Int,
+    ) : View(service) {
+        private val density = service.resources.displayMetrics.density
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.argb(70, Color.red(color), Color.green(color), Color.blue(color))
+            style = Paint.Style.FILL
+        }
+        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.argb(230, Color.red(color), Color.green(color), Color.blue(color))
+            style = Paint.Style.STROKE
+            strokeWidth = density * 3f
+        }
+        private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = density * 2f
+        }
+        private val centerDot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            textSize = when {
+                label.length > 3 -> density * 11f
+                label.length > 2 -> density * 13f
+                else -> density * 15f
+            }
+            setShadowLayer(density * 2f, 0f, 0f, Color.BLACK)
+        }
+
+        init {
+            contentDescription = "アクション${label}の位置"
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width / 2f
+            val cy = height / 2f
+            val radius = minOf(width, height) / 2f - density * 3f
+            val hole = density * 10f
+            canvas.drawCircle(cx, cy, radius, fill)
+            canvas.drawCircle(cx, cy, radius, ring)
+            canvas.drawCircle(cx, cy, hole, ring)
+            val gap = density * 4f
+            canvas.drawLine(cx, cy - hole - density * 2f, cx, cy - gap, cross)
+            canvas.drawLine(cx, cy + gap, cx, cy + hole + density * 2f, cross)
+            canvas.drawLine(cx - hole - density * 2f, cy, cx - gap, cy, cross)
+            canvas.drawLine(cx + gap, cy, cx + hole + density * 2f, cy, cross)
+            canvas.drawCircle(cx, cy, density * 2.2f, centerDot)
+            // ラベルは上側に置き、中心を塞がない
+            val labelY = cy - hole - density * 6f
+            canvas.drawText(label, cx, labelY, labelPaint)
+        }
+    }
 
     private class ColorCrosshairView(service: AccessibilityService) : View(service) {
         private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {

@@ -213,14 +213,16 @@ class OverlayController(
             onDone = { updated ->
                 callbacks.onReplace(updated)
                 config = AutomationConfigEditor.replace(config, updated)
-                editor.show(config)
+                editor.show(config, restoreScrollToActionId = actionId)
             },
             onCancel = {
                 if (removeOnCancel) {
                     callbacks.onRemove(actionId)
                     config = AutomationConfigEditor.remove(config, actionId)
+                    editor.show(config)
+                } else {
+                    editor.show(config, restoreScrollToActionId = actionId)
                 }
-                editor.show(config)
             },
         )
     }
@@ -231,6 +233,7 @@ class OverlayController(
         right: Int,
         bottom: Int,
         onDone: (Int, Int, Int, Int) -> Unit,
+        restoreScrollToActionId: String? = null,
     ) {
         removeControls()
         editor.hide()
@@ -240,7 +243,9 @@ class OverlayController(
             right = right,
             bottom = bottom,
             onDone = onDone,
-            onCancel = { editor.show(config) },
+            onCancel = {
+                editor.show(config, restoreScrollToActionId = restoreScrollToActionId)
+            },
         )
     }
 
@@ -249,6 +254,7 @@ class OverlayController(
         initialY: Int,
         onSample: (x: Int, y: Int, done: (Result<Int>) -> Unit) -> Unit,
         onDone: (x: Int, y: Int, color: Int) -> Unit,
+        restoreScrollToActionId: String? = null,
     ) {
         removeControls()
         editor.hide()
@@ -257,13 +263,15 @@ class OverlayController(
             initialY = initialY,
             onSample = onSample,
             onDone = onDone,
-            onCancel = { editor.show(config) },
+            onCancel = {
+                editor.show(config, restoreScrollToActionId = restoreScrollToActionId)
+            },
         )
     }
 
-    fun showEditor() {
+    fun showEditor(restoreScrollToActionId: String? = null) {
         removeControls()
-        editor.show(config)
+        editor.show(config, restoreScrollToActionId = restoreScrollToActionId)
     }
 
     fun updateConfig(config: AutomationConfig) {
