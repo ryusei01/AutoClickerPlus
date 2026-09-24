@@ -952,6 +952,55 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun disabledActionsAreSkipped() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += if (point.x < 50f) "a" else "c"
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ): Boolean {
+                    calls += "swipe"
+                    return true
+                }
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.Tap(x = 80f, y = 10f, jitterPx = 0, enabled = false),
+                AutomationAction.IfBlock(
+                    enabled = false,
+                    thenActions = listOf(
+                        AutomationAction.Tap(x = 80f, y = 10f, jitterPx = 0),
+                    ),
+                ),
+                AutomationAction.Swipe(enabled = false),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("a", "c"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun invalidJumpContinuesToNextAction() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(

@@ -22,6 +22,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ScreenRegion
+import com.autoclickerplus.model.newTap
 import com.autoclickerplus.model.regionOrNull
 import com.autoclickerplus.model.withRegion
 import kotlinx.coroutines.CancellableContinuation
@@ -66,7 +67,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             callbacks = OverlayCallbacks(
                 onStart = ::startConfiguredAutomation,
                 onStop = { runner.stop() },
-                onAddTap = { addAndPick(AutomationAction.Tap()) },
+                onAddTap = { addAndPick(currentConfig.newTap()) },
                 onAddSwipe = { addAndPick(AutomationAction.Swipe()) },
                 onAddIf = {
                     mutateConfig {
@@ -136,6 +137,9 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         overlay.showControls()
         serviceScope.launch {
             runner.state.collect(overlay::updateRunnerState)
+        }
+        serviceScope.launch {
+            runner.currentPath.collect(overlay::updateCurrentPath)
         }
         serviceScope.launch {
             repository.migrateLegacyIfNeeded()

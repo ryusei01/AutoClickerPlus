@@ -55,6 +55,7 @@ class OverlayController(
     private var controls: View? = null
     private var statusLabel: TextView? = null
     private var runnerState = RunnerState.IDLE
+    private var currentPath = ""
     private var config = AutomationConfig()
     private var toolbarX = dp(12)
     private var toolbarY = dp(100)
@@ -95,9 +96,9 @@ class OverlayController(
         if (controls != null || editor.isVisible || picker.isVisible) return
 
         val panel = LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(6), dp(4), dp(6), dp(4))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
             background = roundedBackground(0xF2292730.toInt(), dp(16).toFloat())
         }
         val dragHandle = TextView(service).apply {
@@ -105,26 +106,25 @@ class OverlayController(
             textSize = 24f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(0, dp(4), 0, dp(4))
             contentDescription = "パネルを移動"
         }
         val actions = LinearLayout(service).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             visibility = if (collapsed) View.GONE else View.VISIBLE
         }
         val status = TextView(service).apply {
-            text = runnerState.label
+            text = statusText()
+            textSize = 14f
             setTextColor(Color.WHITE)
-            setPadding(dp(6), 0, dp(6), 0)
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            minWidth = dp(36)
         }
         actions.addView(status)
         actions.addView(iconButton(R.drawable.ic_play, "開始", callbacks.onStart))
         actions.addView(iconButton(R.drawable.ic_stop, "停止", callbacks.onStop))
-        actions.addView(iconButton(R.drawable.ic_tap, "タップを追加", callbacks.onAddTap))
-        actions.addView(iconButton(R.drawable.ic_swipe, "スクロールを追加", callbacks.onAddSwipe))
-        actions.addView(iconButton(R.drawable.ic_wait, "待機を追加", callbacks.onAddWait))
-        actions.addView(iconButton(R.drawable.ic_break, "ループ終了を追加", callbacks.onAddBreak))
         actions.addView(iconButton(R.drawable.ic_edit, "アクションを編集") {
             removeControls()
             editor.show(config)
@@ -265,7 +265,12 @@ class OverlayController(
 
     fun updateRunnerState(state: RunnerState) {
         runnerState = state
-        statusLabel?.text = state.label
+        statusLabel?.text = statusText()
+    }
+
+    fun updateCurrentPath(path: String) {
+        currentPath = path
+        statusLabel?.text = statusText()
     }
 
     fun hideTransientOverlays() {
@@ -350,12 +355,11 @@ class OverlayController(
         statusLabel = null
     }
 
-    private val RunnerState.label: String
-        get() = when (this) {
-            RunnerState.IDLE -> "待機"
-            RunnerState.RUNNING -> "実行中"
-            RunnerState.FAILED -> "失敗"
-        }
+    private fun statusText(): String = when (runnerState) {
+        RunnerState.IDLE -> "待機"
+        RunnerState.FAILED -> "失敗"
+        RunnerState.RUNNING -> currentPath.ifEmpty { "…" }
+    }
 
     private fun dp(value: Int): Int =
         (value * service.resources.displayMetrics.density).roundToInt()

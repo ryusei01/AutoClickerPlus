@@ -3,6 +3,7 @@ package com.autoclickerplus.engine
 import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
+import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.resolveJumpTarget
@@ -126,6 +127,9 @@ class AutomationRunner(
     private val mutableState = MutableStateFlow(RunnerState.IDLE)
     val state: StateFlow<RunnerState> = mutableState.asStateFlow()
 
+    private val mutableCurrentPath = MutableStateFlow("")
+    val currentPath: StateFlow<String> = mutableCurrentPath.asStateFlow()
+
     private var job: Job? = null
     private val jumpUseCounts = mutableMapOf<String, Int>()
 
@@ -136,18 +140,18 @@ class AutomationRunner(
             mutableState.value = RunnerState.RUNNING
             try {
                 runActions(config, bounds)
-                mutableState.value = RunnerState.IDLE
+                finish(RunnerState.IDLE)
             } catch (cancelled: CancellationException) {
-                mutableState.value = RunnerState.IDLE
+                finish(RunnerState.IDLE)
                 throw cancelled
             } catch (_: GestureFailedException) {
-                mutableState.value = RunnerState.FAILED
+                finish(RunnerState.FAILED)
             } catch (_: ConditionEvaluationException) {
-                mutableState.value = RunnerState.FAILED
+                finish(RunnerState.FAILED)
             } catch (_: LoopBreakException) {
-                mutableState.value = RunnerState.IDLE
+                finish(RunnerState.IDLE)
             } catch (_: JumpLimitException) {
-                mutableState.value = RunnerState.FAILED
+                finish(RunnerState.FAILED)
             }
         }
         return true
@@ -157,7 +161,12 @@ class AutomationRunner(
     fun stop() {
         job?.cancel()
         job = null
-        mutableState.value = RunnerState.IDLE
+        finish(RunnerState.IDLE)
+    }
+
+    private fun finish(state: RunnerState) {
+        mutableCurrentPath.value = ""
+        mutableState.value = state
     }
 
     private suspend fun runActions(config: AutomationConfig, bounds: ScreenBounds) {
@@ -194,6 +203,14 @@ class AutomationRunner(
         var jumps = 0
         while (index < currentActions.size) {
             val action = currentActions[index]
+            if (!action.enabled) {
+                index++
+                continue
+            }
+            mutableCurrentPath.value = AutomationConfigEditor.sequencePath(
+                AutomationConfig(actions = rootActions),
+                action.id,
+            ) ?: "?"
             val outcome = executeAction(action, rootActions, bounds)
             val waitAfterJump = outcome is BranchOutcome.Jump && action is AutomationAction.JumpTo
             if (outcome is BranchOutcome.Continue || waitAfterJump) {

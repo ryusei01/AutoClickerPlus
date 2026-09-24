@@ -73,6 +73,7 @@ import com.autoclickerplus.model.collectActionPaths
 import com.autoclickerplus.model.jumpTargetLabel
 import com.autoclickerplus.model.resolvedTargetPath
 import com.autoclickerplus.model.summary
+import com.autoclickerplus.model.withEnabled
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
@@ -253,6 +254,7 @@ private fun AutomationScreen(
             ScriptSection(library, viewModel, onExport, onImport)
             ServiceSection(serviceConnected, onOpenAccessibility, onShowControls)
             RepeatSection(config, viewModel)
+            DefaultsSection(config, viewModel)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -517,6 +519,29 @@ private fun RepeatSection(config: AutomationConfig, viewModel: AutomationViewMod
 }
 
 @Composable
+private fun DefaultsSection(config: AutomationConfig, viewModel: AutomationViewModel) {
+    Column(Modifier.padding(top = 10.dp)) {
+        Text("デフォルト", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "新しく追加するタップの初期値",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        CommitNumberField(
+            value = config.defaultTapWaitAfterMs.toString(),
+            label = "タップの待機時間 ms",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            onCommit = { value ->
+                value.toLongOrNull()?.let(viewModel::setDefaultTapWaitAfterMs)
+            },
+        )
+    }
+}
+
+@Composable
 private fun FlowArrow() {
     Column(
         modifier = Modifier
@@ -544,10 +569,12 @@ private fun FlowNodeHeader(
     title: String,
     summary: String,
     expanded: Boolean,
+    enabled: Boolean,
     accent: Color,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onToggle: () -> Unit,
+    onToggleEnabled: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onRemove: () -> Unit,
@@ -561,7 +588,7 @@ private fun FlowNodeHeader(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(16.dp))
-                .background(accent)
+                .background(if (enabled) accent else Color(0xFF6B6B6B))
                 .clickable(onClick = onToggle)
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center,
@@ -581,12 +608,20 @@ private fun FlowNodeHeader(
             Text(
                 "$title  ${if (expanded) "▲ 詳細" else "▼ 詳細"}",
                 style = MaterialTheme.typography.titleSmall,
+                color = if (enabled) {
+                    Color.Unspecified
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
             Text(
                 summary,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        TextButton(onClick = onToggleEnabled) {
+            Text(if (enabled) "ON" else "OFF")
         }
         TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("↑") }
         TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("↓") }
@@ -757,6 +792,7 @@ private fun ActionTreeCard(
             action = action,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
+            onReplace = viewModel::replace,
             onRemove = { viewModel.remove(action.id) },
             onMoveUp = { viewModel.move(action.id, -1) },
             onMoveDown = { viewModel.move(action.id, 1) },
@@ -795,13 +831,15 @@ private fun IfBlockCard(
         Column(Modifier.padding(12.dp)) {
             FlowNodeHeader(
                 path = path,
-                title = "IF",
+                title = block.flowTitle(),
                 summary = block.flowSummary(),
                 expanded = expanded,
+                enabled = block.enabled,
                 accent = Color(0xFF6A4C93),
                 canMoveUp = canMoveUp,
                 canMoveDown = canMoveDown,
                 onToggle = { expanded = !expanded },
+                onToggleEnabled = { viewModel.replace(block.withEnabled(!block.enabled)) },
                 onMoveUp = { viewModel.move(block.id, -1) },
                 onMoveDown = { viewModel.move(block.id, 1) },
                 onRemove = { viewModel.remove(block.id) },
@@ -1131,7 +1169,7 @@ private fun BranchEditor(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             TextButton(onClick = {
-                viewModel.addToBranch(blockId, side, AutomationAction.Tap())
+                viewModel.addTapToBranch(blockId, side)
             }) { Text("+タップ") }
             TextButton(onClick = {
                 viewModel.addToBranch(blockId, side, AutomationAction.Swipe())
@@ -1190,10 +1228,12 @@ private fun WaitCard(
                 title = action.flowTitle(),
                 summary = action.flowSummary(),
                 expanded = expanded,
+                enabled = action.enabled,
                 accent = Color(0xFF4A5568),
                 canMoveUp = canMoveUp,
                 canMoveDown = canMoveDown,
                 onToggle = { expanded = !expanded },
+                onToggleEnabled = { onReplace(action.withEnabled(!action.enabled)) },
                 onMoveUp = onMoveUp,
                 onMoveDown = onMoveDown,
                 onRemove = onRemove,
@@ -1246,10 +1286,12 @@ private fun JumpToCard(
                 title = action.flowTitle(),
                 summary = action.flowSummary(path),
                 expanded = expanded,
+                enabled = action.enabled,
                 accent = Color(0xFF6A4C93),
                 canMoveUp = canMoveUp,
                 canMoveDown = canMoveDown,
                 onToggle = { expanded = !expanded },
+                onToggleEnabled = { onReplace(action.withEnabled(!action.enabled)) },
                 onMoveUp = onMoveUp,
                 onMoveDown = onMoveDown,
                 onRemove = onRemove,
@@ -1316,6 +1358,7 @@ private fun BreakLoopCard(
     action: AutomationAction.BreakLoop,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
+    onReplace: (AutomationAction) -> Unit,
     onRemove: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
@@ -1328,10 +1371,12 @@ private fun BreakLoopCard(
                 title = action.flowTitle(),
                 summary = action.flowSummary(),
                 expanded = expanded,
+                enabled = action.enabled,
                 accent = Color(0xFFB5651D),
                 canMoveUp = canMoveUp,
                 canMoveDown = canMoveDown,
                 onToggle = { expanded = !expanded },
+                onToggleEnabled = { onReplace(action.withEnabled(!action.enabled)) },
                 onMoveUp = onMoveUp,
                 onMoveDown = onMoveDown,
                 onRemove = onRemove,
@@ -1372,10 +1417,12 @@ private fun ActionCard(
                 title = action.flowTitle(),
                 summary = action.flowSummary(),
                 expanded = expanded,
+                enabled = action.enabled,
                 accent = accent,
                 canMoveUp = canMoveUp,
                 canMoveDown = canMoveDown,
                 onToggle = { expanded = !expanded },
+                onToggleEnabled = { onReplace(action.withEnabled(!action.enabled)) },
                 onMoveUp = onMoveUp,
                 onMoveDown = onMoveDown,
                 onRemove = onRemove,

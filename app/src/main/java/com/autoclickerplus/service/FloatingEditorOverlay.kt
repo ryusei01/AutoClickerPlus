@@ -34,6 +34,8 @@ import com.autoclickerplus.model.regionOrNull
 import com.autoclickerplus.model.withRegion
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.newTap
+import com.autoclickerplus.model.withEnabled
 import com.autoclickerplus.model.MAX_JUMP_TIMES
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
@@ -706,7 +708,7 @@ class FloatingEditorOverlay(
             addView(LinearLayout(service).apply {
                 orientation = LinearLayout.HORIZONTAL
                 addView(smallButton("+タップ", true) {
-                    callbacks.onAddToBranch(block.id, side, AutomationAction.Tap())
+                    callbacks.onAddToBranch(block.id, side, config.newTap())
                 })
                 addView(smallButton("+スクロール", true) {
                     callbacks.onAddToBranch(block.id, side, AutomationAction.Swipe())
@@ -735,12 +737,17 @@ class FloatingEditorOverlay(
         siblingCount: Int,
     ) = LinearLayout(service).apply {
         orientation = LinearLayout.VERTICAL
+        val titleColor = if (action.enabled) Color.WHITE else 0xFF9A9A9A.toInt()
         addView(LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(label("$path  ${action.flowTitle()}").apply {
+                setTextColor(titleColor)
                 setOnClickListener { toggleExpanded(action.id) }
             }, LinearLayout.LayoutParams(0, dp(36), 1f))
+            addView(smallButton(if (action.enabled) "ON" else "OFF", true) {
+                callbacks.onReplace(action.withEnabled(!action.enabled))
+            })
             addView(smallButton(if (expanded) "閉じる" else "詳細", true) {
                 toggleExpanded(action.id)
             })
@@ -751,6 +758,7 @@ class FloatingEditorOverlay(
             addView(smallButton("削除", true) { callbacks.onRemove(action.id) })
         })
         addView(label(action.flowSummary(path)).apply {
+            setTextColor(titleColor)
             setOnClickListener { toggleExpanded(action.id) }
         })
     }

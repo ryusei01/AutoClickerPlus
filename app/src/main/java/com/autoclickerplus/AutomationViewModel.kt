@@ -12,6 +12,7 @@ import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.ScriptLibraryEditor
+import com.autoclickerplus.model.newTap
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -39,7 +40,7 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch { repository.migrateLegacyIfNeeded() }
     }
 
-    fun addTap() = update { AutomationConfigEditor.add(it, AutomationAction.Tap()) }
+    fun addTap() = update { AutomationConfigEditor.add(it, it.newTap()) }
 
     fun addSwipe() = update { AutomationConfigEditor.add(it, AutomationAction.Swipe()) }
 
@@ -53,6 +54,9 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
 
     fun addToBranch(ifBlockId: String, side: BranchSide, action: AutomationAction) =
         update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, action) }
+
+    fun addTapToBranch(ifBlockId: String, side: BranchSide) =
+        update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, it.newTap()) }
 
     fun addCondition(ifBlockId: String, condition: AutomationCondition) =
         update { AutomationConfigEditor.addCondition(it, ifBlockId, condition) }
@@ -77,6 +81,9 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setRepeatCount(count: Int) =
         update { AutomationConfigEditor.setRepeatCount(it, count) }
+
+    fun setDefaultTapWaitAfterMs(waitMs: Long) =
+        update { AutomationConfigEditor.setDefaultTapWaitAfterMs(it, waitMs) }
 
     fun selectScript(scriptId: String) =
         updateLibrary { ScriptLibraryEditor.select(it, scriptId) }

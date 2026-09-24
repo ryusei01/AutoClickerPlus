@@ -163,6 +163,18 @@ class AutomationConfigEditorTest {
     }
 
     @Test
+    fun defaultTapWaitAfterMsAppliesToNewTap() {
+        val config = AutomationConfigEditor.setDefaultTapWaitAfterMs(
+            AutomationConfig(),
+            750L,
+        )
+        assertEquals(750L, config.defaultTapWaitAfterMs)
+        val tap = AutomationConfigEditor.add(config, config.newTap())
+            .actions.single() as AutomationAction.Tap
+        assertEquals(750L, tap.waitAfterMs)
+    }
+
+    @Test
     fun uniqueNameAddsNumberWhenDuplicated() {
         val library = ScriptLibrary.default().let {
             it.copy(scripts = listOf(it.activeScript.copy(name = "テスト")))

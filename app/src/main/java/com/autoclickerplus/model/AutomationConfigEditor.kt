@@ -81,6 +81,9 @@ object AutomationConfigEditor {
     fun setRepeatCount(config: AutomationConfig, count: Int): AutomationConfig =
         config.copy(repeatCount = count).normalized()
 
+    fun setDefaultTapWaitAfterMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
+        config.copy(defaultTapWaitAfterMs = waitMs).normalized()
+
     fun sequenceNumber(config: AutomationConfig, actionId: String): Int? =
         config.actions.indexOfFirst { it.id == actionId }
             .takeIf { it >= 0 }

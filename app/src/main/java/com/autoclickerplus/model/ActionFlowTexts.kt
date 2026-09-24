@@ -9,7 +9,7 @@ fun AutomationAction.flowTitle(): String = when (this) {
     is AutomationAction.BreakLoop -> "ループ終了"
     is AutomationAction.Wait -> "待機"
     is AutomationAction.JumpTo -> "番号へ"
-}
+}.let { title -> if (enabled) title else "$title（無効）" }
 
 fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     is AutomationAction.Tap ->

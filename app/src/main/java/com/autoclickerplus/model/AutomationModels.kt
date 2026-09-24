@@ -7,6 +7,7 @@ import java.util.UUID
 @Serializable
 sealed class AutomationAction {
     abstract val id: String
+    abstract val enabled: Boolean
     abstract val waitAfterMs: Long
     abstract val waitJitterMs: Int
     abstract val jitterPx: Int
@@ -17,7 +18,8 @@ sealed class AutomationAction {
         override val id: String = UUID.randomUUID().toString(),
         val x: Float = 540f,
         val y: Float = 1000f,
-        override val waitAfterMs: Long = 500L,
+        override val enabled: Boolean = true,
+        override val waitAfterMs: Long = DEFAULT_TAP_WAIT_AFTER_MS,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = DEFAULT_POSITION_JITTER_PX,
     ) : AutomationAction()
@@ -33,6 +35,7 @@ sealed class AutomationAction {
         val durationMs: Long = 300L,
         val stopAtEnd: Boolean = false,
         val fullScroll: Boolean = false,
+        override val enabled: Boolean = true,
         override val waitAfterMs: Long = 300L,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = DEFAULT_POSITION_JITTER_PX,
@@ -46,6 +49,7 @@ sealed class AutomationAction {
         val operator: ConditionOperator = ConditionOperator.AND,
         val thenActions: List<AutomationAction> = emptyList(),
         val elseActions: List<AutomationAction> = emptyList(),
+        override val enabled: Boolean = true,
         override val waitAfterMs: Long = 0L,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 3,
@@ -55,6 +59,7 @@ sealed class AutomationAction {
     @SerialName("break_loop")
     data class BreakLoop(
         override val id: String = UUID.randomUUID().toString(),
+        override val enabled: Boolean = true,
         override val waitAfterMs: Long = 0L,
         override val waitJitterMs: Int = 0,
         override val jitterPx: Int = 3,
@@ -65,6 +70,7 @@ sealed class AutomationAction {
     data class Wait(
         override val id: String = UUID.randomUUID().toString(),
         val durationMs: Long = 1_000L,
+        override val enabled: Boolean = true,
         override val waitAfterMs: Long = 0L,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 3,
@@ -77,6 +83,8 @@ sealed class AutomationAction {
         val targetPath: String = "",
         val targetNumber: Int = 1,
         val maxTimes: Int = 0,
+        val limitScope: JumpLimitScope = JumpLimitScope.RUN,
+        override val enabled: Boolean = true,
         override val waitAfterMs: Long = 0L,
         override val waitJitterMs: Int = 0,
         override val jitterPx: Int = 3,
@@ -149,6 +157,7 @@ data class AutomationConfig(
     val actions: List<AutomationAction> = emptyList(),
     val repeatMode: RepeatMode = RepeatMode.INFINITE,
     val repeatCount: Int = 1,
+    val defaultTapWaitAfterMs: Long = DEFAULT_TAP_WAIT_AFTER_MS,
 )
 
 @Serializable
@@ -249,8 +258,18 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
     }
 }
 
+fun AutomationAction.withEnabled(enabled: Boolean): AutomationAction = when (this) {
+    is AutomationAction.Tap -> copy(enabled = enabled)
+    is AutomationAction.Swipe -> copy(enabled = enabled)
+    is AutomationAction.IfBlock -> copy(enabled = enabled)
+    is AutomationAction.BreakLoop -> copy(enabled = enabled)
+    is AutomationAction.Wait -> copy(enabled = enabled)
+    is AutomationAction.JumpTo -> copy(enabled = enabled)
+}
+
 const val MAX_WAIT_MS = 3_600_000L
 const val MAX_JUMP_TIMES = 10_000
+const val DEFAULT_TAP_WAIT_AFTER_MS = 500L
 const val DEFAULT_WAIT_JITTER_MS = 30
 const val MAX_WAIT_JITTER_MS = 10_000
 const val DEFAULT_POSITION_JITTER_PX = 1
@@ -299,6 +318,16 @@ fun Int.normalizedPositionJitter(): Int = coerceIn(0, MAX_POSITION_JITTER_PX)
 fun AutomationConfig.normalized(): AutomationConfig = copy(
     actions = actions.map(AutomationAction::normalized),
     repeatCount = repeatCount.coerceIn(1, 100_000),
+    defaultTapWaitAfterMs = defaultTapWaitAfterMs.coerceIn(0L, MAX_WAIT_MS),
+)
+
+fun AutomationConfig.newTap(
+    x: Float = 540f,
+    y: Float = 1000f,
+): AutomationAction.Tap = AutomationAction.Tap(
+    x = x,
+    y = y,
+    waitAfterMs = defaultTapWaitAfterMs,
 )
 
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
