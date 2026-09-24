@@ -21,6 +21,9 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.BranchSide
+import com.autoclickerplus.model.ScreenRegion
+import com.autoclickerplus.model.regionOrNull
+import com.autoclickerplus.model.withRegion
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -111,6 +114,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                     }
                 },
                 onPickColor = ::pickColorCondition,
+                onPickRegion = ::pickRegionCondition,
                 onRemove = { actionId ->
                     mutateConfig { AutomationConfigEditor.remove(it, actionId) }
                 },
@@ -339,6 +343,52 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         }
     }
 
+    private fun pickRegionCondition(ifBlockId: String, conditionId: String) {
+        serviceScope.launch {
+            runner.stop()
+            currentConfig = repository.config.first()
+            overlay.updateConfig(currentConfig)
+            val block = AutomationConfigEditor.findAction(currentConfig, ifBlockId)
+                as? AutomationAction.IfBlock ?: return@launch
+            val condition = block.conditions.firstOrNull { it.id == conditionId } ?: return@launch
+            if (condition !is AutomationCondition.TextExists &&
+                condition !is AutomationCondition.UiState
+            ) {
+                return@launch
+            }
+            val bounds = screenBounds()
+            val region = condition.regionOrNull
+            overlay.showRegionPicker(
+                left = region?.left ?: bounds.width / 4,
+                top = region?.top ?: bounds.height / 4,
+                right = region?.right ?: bounds.width * 3 / 4,
+                bottom = region?.bottom ?: bounds.height * 3 / 4,
+            ) { left, top, right, bottom ->
+                serviceScope.launch {
+                    updateConfig { config ->
+                        val latestBlock = AutomationConfigEditor.findAction(config, ifBlockId)
+                            as? AutomationAction.IfBlock ?: return@updateConfig config
+                        val latest = latestBlock.conditions.firstOrNull { it.id == conditionId }
+                            ?: return@updateConfig config
+                        AutomationConfigEditor.replaceCondition(
+                            config,
+                            ifBlockId,
+                            latest.withRegion(
+                                ScreenRegion(
+                                    left = left,
+                                    top = top,
+                                    right = right,
+                                    bottom = bottom,
+                                ),
+                            ),
+                        )
+                    }
+                    overlay.showEditor()
+                }
+            }
+        }
+    }
+
     private fun mutateConfig(transform: (AutomationConfig) -> AutomationConfig) {
         serviceScope.launch { updateConfig(transform) }
     }
@@ -431,6 +481,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         fun requestColorPick(ifBlockId: String, conditionId: String): Boolean {
             val service = activeService ?: return false
             service.pickColorCondition(ifBlockId, conditionId)
+            return true
+        }
+
+        fun requestRegionPick(ifBlockId: String, conditionId: String): Boolean {
+            val service = activeService ?: return false
+            service.pickRegionCondition(ifBlockId, conditionId)
             return true
         }
     }

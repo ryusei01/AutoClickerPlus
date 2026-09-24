@@ -36,6 +36,7 @@ data class OverlayCallbacks(
     val onReplaceCondition: (String, AutomationCondition) -> Unit,
     val onRemoveCondition: (String, String) -> Unit,
     val onPickColor: (String, String) -> Unit,
+    val onPickRegion: (String, String) -> Unit,
     val onRemove: (String) -> Unit,
     val onMove: (String, Int) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
@@ -79,6 +80,7 @@ class OverlayController(
                 onPickCoordinates = ::showPicker,
                 onPickAllCoordinates = ::showAllPicker,
                 onPickColor = callbacks.onPickColor,
+                onPickRegion = callbacks.onPickRegion,
                 onRepeatMode = callbacks.onRepeatMode,
                 onRepeatCount = callbacks.onRepeatCount,
                 onClose = {
@@ -212,6 +214,25 @@ class OverlayController(
                 }
                 editor.show(config)
             },
+        )
+    }
+
+    fun showRegionPicker(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        onDone: (Int, Int, Int, Int) -> Unit,
+    ) {
+        removeControls()
+        editor.hide()
+        picker.showRegion(
+            left = left,
+            top = top,
+            right = right,
+            bottom = bottom,
+            onDone = onDone,
+            onCancel = { editor.show(config) },
         )
     }
 

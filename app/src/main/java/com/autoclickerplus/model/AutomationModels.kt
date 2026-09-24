@@ -93,6 +93,7 @@ sealed class AutomationCondition {
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -103,6 +104,7 @@ sealed class AutomationCondition {
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
         val expectedEnabled: Boolean? = true,
         val expectedClickable: Boolean? = null,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -115,6 +117,14 @@ sealed class AutomationCondition {
         val tolerance: Int = 20,
     ) : AutomationCondition()
 }
+
+@Serializable
+data class ScreenRegion(
+    val left: Int = 0,
+    val top: Int = 0,
+    val right: Int = 0,
+    val bottom: Int = 0,
+)
 
 @Serializable
 enum class ConditionOperator {
@@ -246,6 +256,42 @@ const val MAX_WAIT_JITTER_MS = 10_000
 const val DEFAULT_POSITION_JITTER_PX = 1
 const val MAX_POSITION_JITTER_PX = 50
 
+fun ScreenRegion.normalized(): ScreenRegion = ScreenRegion(
+    left = minOf(left, right).coerceAtLeast(0),
+    top = minOf(top, bottom).coerceAtLeast(0),
+    right = maxOf(left, right).coerceAtLeast(0),
+    bottom = maxOf(top, bottom).coerceAtLeast(0),
+)
+
+fun ScreenRegion.containsNodeCenter(
+    nodeLeft: Int,
+    nodeTop: Int,
+    nodeRight: Int,
+    nodeBottom: Int,
+): Boolean {
+    val centerX = (nodeLeft.toLong() + nodeRight.toLong()) / 2
+    val centerY = (nodeTop.toLong() + nodeBottom.toLong()) / 2
+    val regionLeft = minOf(left, right)
+    val regionRight = maxOf(left, right)
+    val regionTop = minOf(top, bottom)
+    val regionBottom = maxOf(top, bottom)
+    return centerX >= regionLeft && centerX <= regionRight &&
+        centerY >= regionTop && centerY <= regionBottom
+}
+
+fun AutomationCondition.withRegion(region: ScreenRegion?): AutomationCondition = when (this) {
+    is AutomationCondition.TextExists -> copy(region = region)
+    is AutomationCondition.UiState -> copy(region = region)
+    is AutomationCondition.PixelColor -> this
+}
+
+val AutomationCondition.regionOrNull: ScreenRegion?
+    get() = when (this) {
+        is AutomationCondition.TextExists -> region
+        is AutomationCondition.UiState -> region
+        is AutomationCondition.PixelColor -> null
+    }
+
 fun Int.normalizedWaitJitter(): Int = coerceIn(0, MAX_WAIT_JITTER_MS)
 
 fun Int.normalizedPositionJitter(): Int = coerceIn(0, MAX_POSITION_JITTER_PX)
@@ -256,8 +302,14 @@ fun AutomationConfig.normalized(): AutomationConfig = copy(
 )
 
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
-    is AutomationCondition.TextExists -> copy(query = query.take(200))
-    is AutomationCondition.UiState -> copy(query = query.take(200))
+    is AutomationCondition.TextExists -> copy(
+        query = query.take(200),
+        region = region?.normalized(),
+    )
+    is AutomationCondition.UiState -> copy(
+        query = query.take(200),
+        region = region?.normalized(),
+    )
     is AutomationCondition.PixelColor -> copy(
         x = x.coerceAtLeast(0),
         y = y.coerceAtLeast(0),

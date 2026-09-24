@@ -30,6 +30,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     private var controlBar: View? = null
     private var lineView: SwipeLineView? = null
     private var bulkLineView: BulkSwipeLinesView? = null
+    private var regionView: RegionRectView? = null
     private var action: AutomationAction? = null
     private var sequenceNumber: String = ""
     private var bulkConfig: AutomationConfig? = null
@@ -194,6 +195,51 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         )
     }
 
+    fun showRegion(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        onDone: (Int, Int, Int, Int) -> Unit,
+        onCancel: () -> Unit,
+    ) {
+        hide()
+        markerWindows += addMarker(
+            label = "左上",
+            color = Color.rgb(106, 76, 147),
+            centerX = left.toFloat(),
+            centerY = top.toFloat(),
+            onMoved = ::updateRegion,
+        )
+        markerWindows += addMarker(
+            label = "右下",
+            color = Color.rgb(186, 104, 200),
+            centerX = right.toFloat(),
+            centerY = bottom.toFloat(),
+            onMoved = ::updateRegion,
+        )
+        showRegionRect()
+        showControlBar(
+            title = service.getString(R.string.region_picker_title),
+            onDone = {
+                if (markerWindows.size < 2) return@showControlBar
+                val first = markerWindows[0]
+                val second = markerWindows[1]
+                val regionLeft = minOf(first.centerX, second.centerX).roundToInt()
+                val regionTop = minOf(first.centerY, second.centerY).roundToInt()
+                val regionRight = maxOf(first.centerX, second.centerX).roundToInt()
+                val regionBottom = maxOf(first.centerY, second.centerY).roundToInt()
+                hide()
+                onDone(regionLeft, regionTop, regionRight, regionBottom)
+            },
+            onCancel = {
+                hide()
+                onCancel()
+            },
+        )
+        updateRegion()
+    }
+
     fun hide() {
         markerWindows.forEach { runCatching { windowManager.removeView(it.view) } }
         markerWindows.clear()
@@ -204,6 +250,8 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         lineView = null
         bulkLineView?.let { runCatching { windowManager.removeView(it) } }
         bulkLineView = null
+        regionView?.let { runCatching { windowManager.removeView(it) } }
+        regionView = null
         action = null
         sequenceNumber = ""
         bulkConfig = null
@@ -469,6 +517,29 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         return updated
     }
 
+    private fun showRegionRect() {
+        val view = RegionRectView(service)
+        val params = overlayParams(
+            width = WindowManager.LayoutParams.MATCH_PARENT,
+            height = WindowManager.LayoutParams.MATCH_PARENT,
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+        )
+        windowManager.addView(view, params)
+        regionView = view
+    }
+
+    private fun updateRegion() {
+        if (markerWindows.size < 2) return
+        regionView?.setRect(
+            markerWindows[0].centerX,
+            markerWindows[0].centerY,
+            markerWindows[1].centerX,
+            markerWindows[1].centerY,
+        )
+    }
+
     private fun updateLine() {
         if (markerWindows.size != 2 || bulkConfig != null) return
         lineView?.setPoints(
@@ -539,6 +610,40 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         val endX: Float,
         val endY: Float,
     )
+
+    private class RegionRectView(service: AccessibilityService) : View(service) {
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(70, 106, 76, 147)
+            style = Paint.Style.FILL
+        }
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(230, 206, 147, 216)
+            style = Paint.Style.STROKE
+            strokeWidth = service.resources.displayMetrics.density * 3f
+        }
+        private var left = 0f
+        private var top = 0f
+        private var right = 0f
+        private var bottom = 0f
+
+        fun setRect(left: Float, top: Float, right: Float, bottom: Float) {
+            this.left = left
+            this.top = top
+            this.right = right
+            this.bottom = bottom
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val rectLeft = minOf(left, right)
+            val rectTop = minOf(top, bottom)
+            val rectRight = maxOf(left, right)
+            val rectBottom = maxOf(top, bottom)
+            canvas.drawRect(rectLeft, rectTop, rectRight, rectBottom, fill)
+            canvas.drawRect(rectLeft, rectTop, rectRight, rectBottom, stroke)
+        }
+    }
 
     private class SwipeLineView(service: AccessibilityService) : View(service) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

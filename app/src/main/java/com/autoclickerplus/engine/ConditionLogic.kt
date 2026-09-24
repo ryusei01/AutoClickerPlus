@@ -1,13 +1,19 @@
 package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationCondition
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.TextMatchMode
+import com.autoclickerplus.model.containsNodeCenter
 import kotlin.math.abs
 
 data class UiNodeSnapshot(
     val values: List<String>,
     val enabled: Boolean,
     val clickable: Boolean,
+    val left: Int = 0,
+    val top: Int = 0,
+    val right: Int = 0,
+    val bottom: Int = 0,
 )
 
 object ConditionLogic {
@@ -15,14 +21,16 @@ object ConditionLogic {
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.TextExists,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) }
+        node.matchesRegion(condition.region) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) }
     }
 
     fun uiStateMatches(
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.UiState,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) } &&
+        node.matchesRegion(condition.region) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) } &&
             (condition.expectedEnabled == null ||
                 node.enabled == condition.expectedEnabled) &&
             (condition.expectedClickable == null ||
@@ -33,6 +41,11 @@ object ConditionLogic {
         abs(channel(actual, 16) - channel(expected, 16)) <= tolerance &&
             abs(channel(actual, 8) - channel(expected, 8)) <= tolerance &&
             abs(channel(actual, 0) - channel(expected, 0)) <= tolerance
+
+    private fun UiNodeSnapshot.matchesRegion(region: ScreenRegion?): Boolean {
+        if (region == null) return true
+        return region.containsNodeCenter(left, top, right, bottom)
+    }
 
     private fun matches(value: String, query: String, mode: TextMatchMode): Boolean {
         if (query.isBlank()) return false
