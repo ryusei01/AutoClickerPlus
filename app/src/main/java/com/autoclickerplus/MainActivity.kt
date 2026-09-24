@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -1124,13 +1125,30 @@ private fun ConditionEditor(
                 OutlinedButton(onClick = onPickColor) {
                     Text("画面から色を取得")
                 }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(condition.argb or 0xFF000000.toInt())),
+                    )
+                    Text(
+                        String.format("#%08X", condition.argb),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CommitNumberField(
                         value = condition.x.toString(),
                         label = "X",
                         modifier = Modifier.weight(1f),
                         onCommit = { value ->
-                            value.toIntOrNull()?.let { onReplace(condition.copy(x = it)) }
+                            value.toIntOrNull()?.let {
+                                onReplace(condition.copy(x = it.coerceAtLeast(0)))
+                            }
                         },
                     )
                     CommitNumberField(
@@ -1138,18 +1156,18 @@ private fun ConditionEditor(
                         label = "Y",
                         modifier = Modifier.weight(1f),
                         onCommit = { value ->
-                            value.toIntOrNull()?.let { onReplace(condition.copy(y = it)) }
+                            value.toIntOrNull()?.let {
+                                onReplace(condition.copy(y = it.coerceAtLeast(0)))
+                            }
                         },
                     )
                 }
                 CommitTextField(
                     value = String.format("#%08X", condition.argb),
-                    label = "ARGB色",
+                    label = "色コード (#RRGGBB / #AARRGGBB)",
                     modifier = Modifier.fillMaxWidth(),
                     onCommit = { value ->
-                        value.removePrefix("#").toLongOrNull(16)?.let {
-                            onReplace(condition.copy(argb = it.toInt()))
-                        }
+                        parseColorHex(value)?.let { onReplace(condition.copy(argb = it)) }
                     },
                 )
                 CommitNumberField(
@@ -1673,4 +1691,14 @@ private fun AutomationAction.withJitter(jitterPx: Int): AutomationAction = when 
     is AutomationAction.BreakLoop -> this
     is AutomationAction.Wait -> this
     is AutomationAction.JumpTo -> this
+}
+
+private fun parseColorHex(raw: String): Int? {
+    val hex = raw.trim().removePrefix("#")
+    val value = hex.toLongOrNull(16) ?: return null
+    return when (hex.length) {
+        6 -> (0xFF000000L or value).toInt()
+        8 -> value.toInt()
+        else -> null
+    }
 }

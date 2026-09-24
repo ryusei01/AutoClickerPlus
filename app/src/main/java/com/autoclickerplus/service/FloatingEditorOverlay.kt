@@ -684,12 +684,52 @@ class FloatingEditorOverlay(
                 addRegionControls(blockId, condition)
             }
             is AutomationCondition.PixelColor -> {
-                addView(label(
-                    "座標 (${condition.x}, ${condition.y})  色 " +
-                        String.format("#%08X", condition.argb),
-                ))
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(View(service).apply {
+                        background = roundedBackground(
+                            condition.argb or 0xFF000000.toInt(),
+                            dp(8).toFloat(),
+                        )
+                        layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                            setMargins(0, 0, dp(10), 0)
+                        }
+                    })
+                    addView(label(String.format("#%08X", condition.argb)))
+                })
                 addView(smallButton("画面から色を取得", true) {
                     callbacks.onPickColor(blockId, condition.id)
+                })
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(
+                        numberField("X", condition.x.toString()) { value ->
+                            value.toIntOrNull()?.let {
+                                callbacks.onReplaceCondition(
+                                    blockId,
+                                    condition.copy(x = it.coerceAtLeast(0)),
+                                )
+                            }
+                        },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                    addView(
+                        numberField("Y", condition.y.toString()) { value ->
+                            value.toIntOrNull()?.let {
+                                callbacks.onReplaceCondition(
+                                    blockId,
+                                    condition.copy(y = it.coerceAtLeast(0)),
+                                )
+                            }
+                        },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                })
+                addView(textField("色コード (#RRGGBB / #AARRGGBB)", String.format("#%08X", condition.argb)) { value ->
+                    parseColorHex(value)?.let { color ->
+                        callbacks.onReplaceCondition(blockId, condition.copy(argb = color))
+                    }
                 })
                 addView(numberField("色の許容差 0～255", condition.tolerance.toString()) {
                     it.toIntOrNull()?.let { value ->
@@ -1096,6 +1136,16 @@ class FloatingEditorOverlay(
             true -> "true"
             false -> "false"
         }
+
+    private fun parseColorHex(raw: String): Int? {
+        val hex = raw.trim().removePrefix("#")
+        val value = hex.toLongOrNull(16) ?: return null
+        return when (hex.length) {
+            6 -> (0xFF000000L or value).toInt()
+            8 -> value.toInt()
+            else -> null
+        }
+    }
 
     private fun roundedBackground(color: Int, radius: Float) = GradientDrawable().apply {
         setColor(color)
