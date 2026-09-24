@@ -2,6 +2,7 @@ package com.autoclickerplus.service
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.os.SystemClock
 import android.view.Display
@@ -14,6 +15,7 @@ import com.autoclickerplus.engine.ConditionLogic
 import com.autoclickerplus.engine.UiNodeSnapshot
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.normalized
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -105,6 +107,7 @@ class AccessibilityConditionEvaluator(
         destination: MutableList<UiNodeSnapshot>,
     ) {
         if (node.isVisibleToUser && node.packageName != service.packageName) {
+            val bounds = Rect().also(node::getBoundsInScreen)
             destination += UiNodeSnapshot(
                 values = listOfNotNull(
                     node.text?.toString(),
@@ -117,6 +120,12 @@ class AccessibilityConditionEvaluator(
                 ),
                 enabled = node.isEnabled,
                 clickable = node.isClickable,
+                bounds = AutomationCondition.ScreenRegion(
+                    left = bounds.left,
+                    top = bounds.top,
+                    right = bounds.right,
+                    bottom = bounds.bottom,
+                ).normalized(),
             )
         }
         for (index in 0 until node.childCount) {

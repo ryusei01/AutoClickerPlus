@@ -914,6 +914,14 @@ private fun ConditionEditor(
                 TextButton(onClick = {
                     onReplace(condition.copy(matchMode = condition.matchMode.toggled()))
                 }) { Text("一致方法: ${condition.matchMode.label}") }
+                RegionFilterEditor(
+                    region = condition.region,
+                    onEnable = {
+                        onReplace(condition.copy(region = AutomationCondition.ScreenRegion()))
+                    },
+                    onDisable = { onReplace(condition.copy(region = null)) },
+                    onReplace = { onReplace(condition.copy(region = it)) },
+                )
             }
             is AutomationCondition.UiState -> {
                 CommitTextField(
@@ -937,6 +945,14 @@ private fun ConditionEditor(
                         ))
                     }) { Text("clickable: ${condition.expectedClickable.expectedLabel}") }
                 }
+                RegionFilterEditor(
+                    region = condition.region,
+                    onEnable = {
+                        onReplace(condition.copy(region = AutomationCondition.ScreenRegion()))
+                    },
+                    onDisable = { onReplace(condition.copy(region = null)) },
+                    onReplace = { onReplace(condition.copy(region = it)) },
+                )
             }
             is AutomationCondition.PixelColor -> {
                 OutlinedButton(onClick = onPickColor) {
@@ -1075,6 +1091,68 @@ private val Boolean?.expectedLabel: String
         true -> "true"
         false -> "false"
     }
+
+@Composable
+private fun RegionFilterEditor(
+    region: AutomationCondition.ScreenRegion?,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit,
+    onReplace: (AutomationCondition.ScreenRegion) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = {
+            if (region == null) onEnable() else onDisable()
+        }) {
+            Text(if (region == null) "区域指定: OFF" else "区域指定: ON")
+        }
+        if (region != null) {
+            TextButton(onClick = onDisable) { Text("区域解除") }
+        }
+    }
+    if (region != null) {
+        Text(
+            "同じ文言が複数あっても、この区域内の要素だけ判定します",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CommitNumberField(
+                value = region.left.toString(),
+                label = "左",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(left = it)) }
+                },
+            )
+            CommitNumberField(
+                value = region.top.toString(),
+                label = "上",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(top = it)) }
+                },
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CommitNumberField(
+                value = region.right.toString(),
+                label = "右",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(right = it)) }
+                },
+            )
+            CommitNumberField(
+                value = region.bottom.toString(),
+                label = "下",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(bottom = it)) }
+                },
+            )
+        }
+    }
+}
 
 @Composable
 private fun WaitCard(

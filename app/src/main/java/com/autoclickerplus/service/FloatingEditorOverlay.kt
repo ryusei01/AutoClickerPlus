@@ -578,6 +578,24 @@ class FloatingEditorOverlay(
                         condition.copy(matchMode = condition.matchMode.toggled()),
                     )
                 })
+                addView(regionEditor(
+                    region = condition.region,
+                    onEnable = {
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(region = AutomationCondition.ScreenRegion()),
+                        )
+                    },
+                    onDisable = {
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(region = null),
+                        )
+                    },
+                    onReplace = { region ->
+                        callbacks.onReplaceCondition(blockId, condition.copy(region = region))
+                    },
+                ))
             }
             is AutomationCondition.UiState -> {
                 addView(textField("対象文字", condition.query) {
@@ -608,6 +626,24 @@ class FloatingEditorOverlay(
                         )
                     })
                 })
+                addView(regionEditor(
+                    region = condition.region,
+                    onEnable = {
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(region = AutomationCondition.ScreenRegion()),
+                        )
+                    },
+                    onDisable = {
+                        callbacks.onReplaceCondition(
+                            blockId,
+                            condition.copy(region = null),
+                        )
+                    },
+                    onReplace = { region ->
+                        callbacks.onReplaceCondition(blockId, condition.copy(region = region))
+                    },
+                ))
             }
             is AutomationCondition.PixelColor -> {
                 addView(label(
@@ -626,6 +662,37 @@ class FloatingEditorOverlay(
                     }
                 })
             }
+        }
+    }
+
+    private fun regionEditor(
+        region: AutomationCondition.ScreenRegion?,
+        onEnable: () -> Unit,
+        onDisable: () -> Unit,
+        onReplace: (AutomationCondition.ScreenRegion) -> Unit,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(smallButton(
+            if (region == null) "区域指定: OFF" else "区域指定: ON",
+            true,
+        ) {
+            if (region == null) onEnable() else onDisable()
+        })
+        if (region != null) {
+            addView(label("同じ文言でもこの区域内だけ判定"))
+            addView(numberField("左", region.left.toString()) { value ->
+                value.toIntOrNull()?.let { onReplace(region.copy(left = it)) }
+            })
+            addView(numberField("上", region.top.toString()) { value ->
+                value.toIntOrNull()?.let { onReplace(region.copy(top = it)) }
+            })
+            addView(numberField("右", region.right.toString()) { value ->
+                value.toIntOrNull()?.let { onReplace(region.copy(right = it)) }
+            })
+            addView(numberField("下", region.bottom.toString()) { value ->
+                value.toIntOrNull()?.let { onReplace(region.copy(bottom = it)) }
+            })
+            addView(smallButton("区域解除", true) { onDisable() })
         }
     }
 

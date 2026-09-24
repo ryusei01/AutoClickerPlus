@@ -2,12 +2,14 @@ package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.TextMatchMode
+import com.autoclickerplus.model.normalized
 import kotlin.math.abs
 
 data class UiNodeSnapshot(
     val values: List<String>,
     val enabled: Boolean,
     val clickable: Boolean,
+    val bounds: AutomationCondition.ScreenRegion? = null,
 )
 
 object ConditionLogic {
@@ -15,14 +17,16 @@ object ConditionLogic {
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.TextExists,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) }
+        inRegion(node, condition.region) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) }
     }
 
     fun uiStateMatches(
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.UiState,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) } &&
+        inRegion(node, condition.region) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) } &&
             (condition.expectedEnabled == null ||
                 node.enabled == condition.expectedEnabled) &&
             (condition.expectedClickable == null ||
@@ -40,6 +44,19 @@ object ConditionLogic {
             TextMatchMode.EXACT -> value.equals(query, ignoreCase = true)
             TextMatchMode.CONTAINS -> value.contains(query, ignoreCase = true)
         }
+    }
+
+    private fun inRegion(
+        node: UiNodeSnapshot,
+        region: AutomationCondition.ScreenRegion?,
+    ): Boolean {
+        if (region == null) return true
+        val bounds = node.bounds?.normalized() ?: return false
+        val target = region.normalized()
+        val centerX = bounds.left + (bounds.right - bounds.left) / 2
+        val centerY = bounds.top + (bounds.bottom - bounds.top) / 2
+        return centerX in target.left..target.right &&
+            centerY in target.top..target.bottom
     }
 
     private fun channel(color: Int, shift: Int): Int = color shr shift and 0xFF

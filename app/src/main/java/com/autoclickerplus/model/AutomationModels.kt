@@ -88,11 +88,20 @@ sealed class AutomationCondition {
     abstract val id: String
 
     @Serializable
+    data class ScreenRegion(
+        val left: Int = 0,
+        val top: Int = 0,
+        val right: Int = 0,
+        val bottom: Int = 0,
+    )
+
+    @Serializable
     @SerialName("text_exists")
     data class TextExists(
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -103,6 +112,7 @@ sealed class AutomationCondition {
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
         val expectedEnabled: Boolean? = true,
         val expectedClickable: Boolean? = null,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -256,12 +266,31 @@ fun AutomationConfig.normalized(): AutomationConfig = copy(
 )
 
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
-    is AutomationCondition.TextExists -> copy(query = query.take(200))
-    is AutomationCondition.UiState -> copy(query = query.take(200))
+    is AutomationCondition.TextExists -> copy(
+        query = query.take(200),
+        region = region?.normalized(),
+    )
+    is AutomationCondition.UiState -> copy(
+        query = query.take(200),
+        region = region?.normalized(),
+    )
     is AutomationCondition.PixelColor -> copy(
         x = x.coerceAtLeast(0),
         y = y.coerceAtLeast(0),
         tolerance = tolerance.coerceIn(0, 255),
+    )
+}
+
+fun AutomationCondition.ScreenRegion.normalized(): AutomationCondition.ScreenRegion {
+    val safeLeft = left.coerceAtLeast(0)
+    val safeTop = top.coerceAtLeast(0)
+    val safeRight = right.coerceAtLeast(0)
+    val safeBottom = bottom.coerceAtLeast(0)
+    return AutomationCondition.ScreenRegion(
+        left = minOf(safeLeft, safeRight),
+        top = minOf(safeTop, safeBottom),
+        right = maxOf(safeLeft, safeRight),
+        bottom = maxOf(safeTop, safeBottom),
     )
 }
 
