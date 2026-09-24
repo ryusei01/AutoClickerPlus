@@ -228,25 +228,29 @@ class AutomationRunner(
                         allowJump = false,
                         startIndex = target.index,
                     )
+                    var resumeAtJump = false
                     while (nestedOutcome is BranchOutcome.Jump) {
                         val next = resolveJumpTarget(rootActions, nestedOutcome.targetPath) ?: break
                         jumps++
                         if (jumps > MAX_JUMPS_PER_LOOP) {
                             throw JumpLimitException()
                         }
-                        nestedOutcome = if (next.actions === rootActions) {
+                        if (next.actions === rootActions) {
                             currentActions = rootActions
                             index = next.index
-                            BranchOutcome.Continue
-                        } else {
-                            executeActions(
-                                actions = next.actions,
-                                rootActions = rootActions,
-                                bounds = bounds,
-                                allowJump = false,
-                                startIndex = next.index,
-                            )
+                            resumeAtJump = true
+                            break
                         }
+                        nestedOutcome = executeActions(
+                            actions = next.actions,
+                            rootActions = rootActions,
+                            bounds = bounds,
+                            allowJump = false,
+                            startIndex = next.index,
+                        )
+                    }
+                    if (resumeAtJump) {
+                        continue
                     }
                     if (nestedOutcome is BranchOutcome.Jump) {
                         return nestedOutcome

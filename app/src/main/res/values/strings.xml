@@ -9,4 +9,5 @@
     <string name="repeat_until_stop">STOPまで</string>
     <string name="repeat_count">回数指定</string>
     <string name="color_picker_title">色を取得する位置</string>
+    <string name="region_picker_title">文字を判別する区域</string>
 </resources>

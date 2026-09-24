@@ -2,6 +2,7 @@ package com.autoclickerplus.service
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.os.SystemClock
 import android.view.Display
@@ -93,7 +94,8 @@ class AccessibilityConditionEvaluator(
         val root = service.rootInActiveWindow
             ?: throw ConditionEvaluationException("画面の文字情報を取得できません")
         return try {
-            buildList { collectNodes(root, this) }
+            root.refresh()
+            buildList { collectNodes(root, this, parentIndex = -1) }
         } finally {
             @Suppress("DEPRECATION")
             root.recycle()
@@ -103,8 +105,14 @@ class AccessibilityConditionEvaluator(
     private fun collectNodes(
         node: AccessibilityNodeInfo,
         destination: MutableList<UiNodeSnapshot>,
+        parentIndex: Int,
     ) {
-        if (node.isVisibleToUser && node.packageName != service.packageName) {
+        val currentIndex = if (node.packageName == service.packageName) {
+            parentIndex
+        } else {
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            val index = destination.size
             destination += UiNodeSnapshot(
                 values = listOfNotNull(
                     node.text?.toString(),
@@ -115,19 +123,33 @@ class AccessibilityConditionEvaluator(
                         null
                     },
                 ),
-                enabled = node.isEnabled,
-                clickable = node.isClickable,
+                enabled = nodeIsEnabled(node),
+                clickable = node.isClickable ||
+                    node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK },
+                left = bounds.left,
+                top = bounds.top,
+                right = bounds.right,
+                bottom = bounds.bottom,
+                visible = node.isVisibleToUser,
+                parentIndex = parentIndex,
             )
+            index
         }
         for (index in 0 until node.childCount) {
             val child = node.getChild(index) ?: continue
             try {
-                collectNodes(child, destination)
+                collectNodes(child, destination, currentIndex)
             } finally {
                 @Suppress("DEPRECATION")
                 child.recycle()
             }
         }
+    }
+
+    private fun nodeIsEnabled(node: AccessibilityNodeInfo): Boolean {
+        if (!node.isEnabled) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return true
+        return !ConditionLogic.indicatesDisabledState(node.stateDescription?.toString())
     }
 
     private suspend fun captureScreenshot(): Bitmap {

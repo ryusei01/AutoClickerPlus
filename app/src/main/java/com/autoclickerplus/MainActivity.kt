@@ -77,6 +77,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.service.AutoClickAccessibilityService
@@ -183,6 +184,17 @@ class MainActivity : ComponentActivity() {
                             moveTaskToBack(true)
                         }
                     },
+                    onPickRegion = { ifBlockId, conditionId ->
+                        if (!AutoClickAccessibilityService.requestRegionPick(
+                                ifBlockId,
+                                conditionId,
+                            )
+                        ) {
+                            toast("先に操作サービスを有効にしてください")
+                        } else {
+                            moveTaskToBack(true)
+                        }
+                    },
                 )
             }
         }
@@ -211,6 +223,7 @@ private fun AutomationScreen(
     onPickCoordinates: (String) -> Unit,
     onPickAllCoordinates: () -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickRegion: (String, String) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
     val jumpPaths = remember(config) { config.collectActionPaths() }
@@ -273,6 +286,7 @@ private fun AutomationScreen(
                             viewModel = viewModel,
                             onPickCoordinates = onPickCoordinates,
                             onPickColor = onPickColor,
+                            onPickRegion = onPickRegion,
                         )
                         if (index < config.actions.lastIndex) {
                             FlowArrow()
@@ -703,6 +717,7 @@ private fun ActionTreeCard(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickRegion: (String, String) -> Unit,
 ) {
     when (action) {
         is AutomationAction.Tap, is AutomationAction.Swipe -> ActionCard(
@@ -756,6 +771,7 @@ private fun ActionTreeCard(
             viewModel = viewModel,
             onPickCoordinates = onPickCoordinates,
             onPickColor = onPickColor,
+            onPickRegion = onPickRegion,
         )
     }
 }
@@ -771,6 +787,7 @@ private fun IfBlockCard(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickRegion: (String, String) -> Unit,
 ) {
     var expanded by remember(block.id) { mutableStateOf(false) }
     var tab by remember(block.id) { mutableStateOf(IfEditTab.CONDITION) }
@@ -845,6 +862,7 @@ private fun IfBlockCard(
                                 onReplace = { viewModel.replaceCondition(block.id, it) },
                                 onRemove = { viewModel.removeCondition(block.id, condition.id) },
                                 onPickColor = { onPickColor(block.id, condition.id) },
+                                onPickRegion = { onPickRegion(block.id, condition.id) },
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -869,6 +887,7 @@ private fun IfBlockCard(
                         viewModel = viewModel,
                         onPickCoordinates = onPickCoordinates,
                         onPickColor = onPickColor,
+                        onPickRegion = onPickRegion,
                     )
                     IfEditTab.ELSE -> BranchEditor(
                         pathPrefix = "$path-E",
@@ -880,9 +899,72 @@ private fun IfBlockCard(
                         viewModel = viewModel,
                         onPickCoordinates = onPickCoordinates,
                         onPickColor = onPickColor,
+                        onPickRegion = onPickRegion,
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RegionEditor(
+    region: ScreenRegion?,
+    onPickRegion: () -> Unit,
+    onReplace: (ScreenRegion?) -> Unit,
+) {
+    Text(
+        region?.let {
+            "区域 (${it.left}, ${it.top}) - (${it.right}, ${it.bottom})。文字の中心がこの中にあるときだけ一致"
+        } ?: "区域: 画面全体。同じ文言を場所で分けるときは区域を指定",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        TextButton(onClick = onPickRegion) {
+            Text(if (region == null) "区域を指定" else "区域を取り直す")
+        }
+        if (region != null) {
+            TextButton(onClick = { onReplace(null) }) { Text("区域を解除") }
+        }
+    }
+    if (region != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CommitNumberField(
+                value = region.left.toString(),
+                label = "左",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(left = it.coerceAtLeast(0))) }
+                },
+            )
+            CommitNumberField(
+                value = region.top.toString(),
+                label = "上",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(top = it.coerceAtLeast(0))) }
+                },
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CommitNumberField(
+                value = region.right.toString(),
+                label = "右",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(right = it.coerceAtLeast(0))) }
+                },
+            )
+            CommitNumberField(
+                value = region.bottom.toString(),
+                label = "下",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(region.copy(bottom = it.coerceAtLeast(0))) }
+                },
+            )
         }
     }
 }
@@ -893,6 +975,7 @@ private fun ConditionEditor(
     onReplace: (AutomationCondition) -> Unit,
     onRemove: () -> Unit,
     onPickColor: () -> Unit,
+    onPickRegion: () -> Unit,
 ) {
     Column(Modifier.padding(start = 8.dp, bottom = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -914,6 +997,11 @@ private fun ConditionEditor(
                 TextButton(onClick = {
                     onReplace(condition.copy(matchMode = condition.matchMode.toggled()))
                 }) { Text("一致方法: ${condition.matchMode.label}") }
+                RegionEditor(
+                    region = condition.region,
+                    onPickRegion = onPickRegion,
+                    onReplace = { onReplace(condition.copy(region = it)) },
+                )
             }
             is AutomationCondition.UiState -> {
                 CommitTextField(
@@ -937,6 +1025,11 @@ private fun ConditionEditor(
                         ))
                     }) { Text("clickable: ${condition.expectedClickable.expectedLabel}") }
                 }
+                RegionEditor(
+                    region = condition.region,
+                    onPickRegion = onPickRegion,
+                    onReplace = { onReplace(condition.copy(region = it)) },
+                )
             }
             is AutomationCondition.PixelColor -> {
                 OutlinedButton(onClick = onPickColor) {
@@ -996,6 +1089,7 @@ private fun BranchEditor(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickRegion: (String, String) -> Unit,
 ) {
     Column(
         Modifier
@@ -1027,6 +1121,7 @@ private fun BranchEditor(
                 viewModel = viewModel,
                 onPickCoordinates = onPickCoordinates,
                 onPickColor = onPickColor,
+                onPickRegion = onPickRegion,
             )
         }
         Row(

@@ -30,6 +30,8 @@ import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
+import com.autoclickerplus.model.regionOrNull
+import com.autoclickerplus.model.withRegion
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
 import com.autoclickerplus.model.MAX_JUMP_TIMES
@@ -57,6 +59,7 @@ data class FloatingEditorCallbacks(
     val onPickCoordinates: (String) -> Unit,
     val onPickAllCoordinates: () -> Unit,
     val onPickColor: (String, String) -> Unit,
+    val onPickRegion: (String, String) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
     val onClose: () -> Unit,
@@ -578,6 +581,7 @@ class FloatingEditorOverlay(
                         condition.copy(matchMode = condition.matchMode.toggled()),
                     )
                 })
+                addRegionControls(blockId, condition)
             }
             is AutomationCondition.UiState -> {
                 addView(textField("対象文字", condition.query) {
@@ -608,6 +612,7 @@ class FloatingEditorOverlay(
                         )
                     })
                 })
+                addRegionControls(blockId, condition)
             }
             is AutomationCondition.PixelColor -> {
                 addView(label(
@@ -626,6 +631,58 @@ class FloatingEditorOverlay(
                     }
                 })
             }
+        }
+    }
+
+    private fun LinearLayout.addRegionControls(
+        blockId: String,
+        condition: AutomationCondition,
+    ) {
+        val region = condition.regionOrNull
+        addView(label(
+            region?.let {
+                "区域 (${it.left}, ${it.top}) - (${it.right}, ${it.bottom})。文字の中心がこの中にあるときだけ一致"
+            } ?: "区域: 画面全体（同じ文言を場所で分けるときは区域を指定）",
+        ))
+        addView(smallButton(if (region == null) "区域を指定" else "区域を取り直す", true) {
+            callbacks.onPickRegion(blockId, condition.id)
+        })
+        if (region != null) {
+            addView(numberField("区域 左", region.left.toString()) {
+                it.toIntOrNull()?.let { value ->
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.withRegion(region.copy(left = value.coerceAtLeast(0))),
+                    )
+                }
+            })
+            addView(numberField("区域 上", region.top.toString()) {
+                it.toIntOrNull()?.let { value ->
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.withRegion(region.copy(top = value.coerceAtLeast(0))),
+                    )
+                }
+            })
+            addView(numberField("区域 右", region.right.toString()) {
+                it.toIntOrNull()?.let { value ->
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.withRegion(region.copy(right = value.coerceAtLeast(0))),
+                    )
+                }
+            })
+            addView(numberField("区域 下", region.bottom.toString()) {
+                it.toIntOrNull()?.let { value ->
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.withRegion(region.copy(bottom = value.coerceAtLeast(0))),
+                    )
+                }
+            })
+            addView(smallButton("区域を解除", true) {
+                callbacks.onReplaceCondition(blockId, condition.withRegion(null))
+            })
         }
     }
 

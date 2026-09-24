@@ -1,6 +1,7 @@
 package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationCondition
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.TextMatchMode
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -63,6 +64,170 @@ class ConditionLogicTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun sameTextIsDistinguishedByRegion() {
+        val nodes = listOf(
+            UiNodeSnapshot(
+                values = listOf("発売中"),
+                enabled = true,
+                clickable = true,
+                left = 10,
+                top = 10,
+                right = 80,
+                bottom = 40,
+            ),
+            UiNodeSnapshot(
+                values = listOf("発売中"),
+                enabled = true,
+                clickable = true,
+                left = 400,
+                top = 800,
+                right = 520,
+                bottom = 860,
+            ),
+        )
+        val upper = AutomationCondition.TextExists(
+            query = "発売中",
+            matchMode = TextMatchMode.EXACT,
+            region = ScreenRegion(left = 0, top = 0, right = 200, bottom = 200),
+        )
+        val lower = upper.copy(
+            region = ScreenRegion(left = 300, top = 700, right = 600, bottom = 900),
+        )
+
+        assertTrue(ConditionLogic.textExists(nodes, upper))
+        assertTrue(ConditionLogic.textExists(nodes, lower))
+        assertFalse(
+            ConditionLogic.textExists(
+                nodes,
+                upper.copy(region = ScreenRegion(left = 200, top = 200, right = 300, bottom = 300)),
+            ),
+        )
+        assertTrue(ConditionLogic.textExists(nodes, upper.copy(region = null)))
+        assertFalse(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(
+                    query = "発売中",
+                    matchMode = TextMatchMode.EXACT,
+                    expectedEnabled = true,
+                    region = ScreenRegion(left = 200, top = 200, right = 300, bottom = 300),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun chromeChildTextUsesDisabledClickableParent() {
+        val nodes = listOf(
+            UiNodeSnapshot(
+                values = listOf("購入する"),
+                enabled = false,
+                clickable = true,
+                visible = true,
+            ),
+            UiNodeSnapshot(
+                values = listOf("購入する"),
+                enabled = true,
+                clickable = false,
+                visible = true,
+                parentIndex = 0,
+            ),
+        )
+
+        assertFalse(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(query = "購入する", expectedEnabled = true),
+            ),
+        )
+        assertTrue(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(query = "購入する", expectedEnabled = false),
+            ),
+        )
+        assertTrue(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(
+                    query = "購入する",
+                    expectedEnabled = null,
+                    expectedClickable = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun clickableDoesNotLeakFromAncestorWithDifferentText() {
+        val nodes = listOf(
+            UiNodeSnapshot(
+                values = listOf("商品カード"),
+                enabled = true,
+                clickable = true,
+            ),
+            UiNodeSnapshot(
+                values = listOf("説明"),
+                enabled = true,
+                clickable = false,
+                parentIndex = 0,
+            ),
+            UiNodeSnapshot(
+                values = emptyList(),
+                enabled = true,
+                clickable = true,
+            ),
+            UiNodeSnapshot(
+                values = listOf("購入する"),
+                enabled = true,
+                clickable = false,
+                parentIndex = 2,
+            ),
+        )
+
+        assertFalse(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(
+                    query = "説明",
+                    expectedEnabled = null,
+                    expectedClickable = true,
+                ),
+            ),
+        )
+        assertTrue(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(
+                    query = "購入する",
+                    expectedEnabled = null,
+                    expectedClickable = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun hiddenTextDoesNotMatch() {
+        assertFalse(
+            ConditionLogic.textExists(
+                listOf(
+                    UiNodeSnapshot(
+                        values = listOf("発売中"),
+                        enabled = true,
+                        clickable = false,
+                        visible = false,
+                    ),
+                ),
+                AutomationCondition.TextExists(query = "発売中"),
+            ),
+        )
+        assertFalse(ConditionLogic.indicatesDisabledState(null))
+        assertTrue(ConditionLogic.indicatesDisabledState("無効"))
+        assertFalse(ConditionLogic.indicatesDisabledState("オン"))
     }
 
     @Test
