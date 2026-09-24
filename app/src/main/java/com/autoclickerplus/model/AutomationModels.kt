@@ -93,6 +93,10 @@ sealed class AutomationCondition {
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val regionLeft: Int = NO_TEXT_REGION,
+        val regionTop: Int = NO_TEXT_REGION,
+        val regionRight: Int = NO_TEXT_REGION,
+        val regionBottom: Int = NO_TEXT_REGION,
     ) : AutomationCondition()
 
     @Serializable
@@ -103,6 +107,10 @@ sealed class AutomationCondition {
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
         val expectedEnabled: Boolean? = true,
         val expectedClickable: Boolean? = null,
+        val regionLeft: Int = NO_TEXT_REGION,
+        val regionTop: Int = NO_TEXT_REGION,
+        val regionRight: Int = NO_TEXT_REGION,
+        val regionBottom: Int = NO_TEXT_REGION,
     ) : AutomationCondition()
 
     @Serializable
@@ -239,6 +247,8 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
     }
 }
 
+const val NO_TEXT_REGION = -1
+
 const val MAX_WAIT_MS = 3_600_000L
 const val MAX_JUMP_TIMES = 10_000
 const val DEFAULT_WAIT_JITTER_MS = 30
@@ -255,9 +265,27 @@ fun AutomationConfig.normalized(): AutomationConfig = copy(
     repeatCount = repeatCount.coerceIn(1, 100_000),
 )
 
+fun AutomationCondition.TextExists.hasRegion(): Boolean =
+    regionLeft >= 0 && regionTop >= 0 && regionRight > regionLeft && regionBottom > regionTop
+
+fun AutomationCondition.UiState.hasRegion(): Boolean =
+    regionLeft >= 0 && regionTop >= 0 && regionRight > regionLeft && regionBottom > regionTop
+
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
-    is AutomationCondition.TextExists -> copy(query = query.take(200))
-    is AutomationCondition.UiState -> copy(query = query.take(200))
+    is AutomationCondition.TextExists -> copy(
+        query = query.take(200),
+        regionLeft = regionLeft,
+        regionTop = regionTop,
+        regionRight = regionRight,
+        regionBottom = regionBottom,
+    )
+    is AutomationCondition.UiState -> copy(
+        query = query.take(200),
+        regionLeft = regionLeft,
+        regionTop = regionTop,
+        regionRight = regionRight,
+        regionBottom = regionBottom,
+    )
     is AutomationCondition.PixelColor -> copy(
         x = x.coerceAtLeast(0),
         y = y.coerceAtLeast(0),

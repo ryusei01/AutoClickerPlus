@@ -28,6 +28,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.NO_TEXT_REGION
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
@@ -578,10 +579,42 @@ class FloatingEditorOverlay(
                         condition.copy(matchMode = condition.matchMode.toggled()),
                     )
                 })
+                addView(regionFields(
+                    left = condition.regionLeft,
+                    top = condition.regionTop,
+                    right = condition.regionRight,
+                    bottom = condition.regionBottom,
+                ) { left, top, right, bottom ->
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.copy(
+                            regionLeft = left,
+                            regionTop = top,
+                            regionRight = right,
+                            regionBottom = bottom,
+                        ),
+                    )
+                })
             }
             is AutomationCondition.UiState -> {
                 addView(textField("対象文字", condition.query) {
                     callbacks.onReplaceCondition(blockId, condition.copy(query = it))
+                })
+                addView(regionFields(
+                    left = condition.regionLeft,
+                    top = condition.regionTop,
+                    right = condition.regionRight,
+                    bottom = condition.regionBottom,
+                ) { left, top, right, bottom ->
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.copy(
+                            regionLeft = left,
+                            regionTop = top,
+                            regionRight = right,
+                            regionBottom = bottom,
+                        ),
+                    )
                 })
                 addView(LinearLayout(service).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -740,6 +773,38 @@ class FloatingEditorOverlay(
         orientation = LinearLayout.VERTICAL
         addView(label(labelText))
         addView(commitField(value, InputType.TYPE_CLASS_TEXT, onCommit))
+    }
+
+    private fun regionFields(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        onReplace: (Int, Int, Int, Int) -> Unit,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(label("検索区域（左上・右下、未設定で画面全体）"))
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(numberField("左X", if (left >= 0) left.toString() else "") {
+                it.toIntOrNull()?.let { value -> onReplace(value, top, right, bottom) }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(numberField("上Y", if (top >= 0) top.toString() else "") {
+                it.toIntOrNull()?.let { value -> onReplace(left, value, right, bottom) }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        })
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(numberField("右X", if (right >= 0) right.toString() else "") {
+                it.toIntOrNull()?.let { value -> onReplace(left, top, value, bottom) }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(numberField("下Y", if (bottom >= 0) bottom.toString() else "") {
+                it.toIntOrNull()?.let { value -> onReplace(left, top, right, value) }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        })
+        addView(smallButton("区域をクリア", true) {
+            onReplace(NO_TEXT_REGION, NO_TEXT_REGION, NO_TEXT_REGION, NO_TEXT_REGION)
+        })
     }
 
     private fun numberField(

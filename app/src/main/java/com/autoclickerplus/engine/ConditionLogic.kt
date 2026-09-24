@@ -2,31 +2,78 @@ package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.TextMatchMode
+import com.autoclickerplus.model.hasRegion
 import kotlin.math.abs
 
 data class UiNodeSnapshot(
     val values: List<String>,
     val enabled: Boolean,
     val clickable: Boolean,
-)
+    val left: Int = Int.MIN_VALUE,
+    val top: Int = Int.MIN_VALUE,
+    val right: Int = Int.MIN_VALUE,
+    val bottom: Int = Int.MIN_VALUE,
+) {
+    val hasBounds: Boolean
+        get() = left != Int.MIN_VALUE
+}
 
 object ConditionLogic {
     fun textExists(
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.TextExists,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) }
+        nodeMatchesRegion(node, condition) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) }
     }
 
     fun uiStateMatches(
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.UiState,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) } &&
+        nodeMatchesRegion(node, condition) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) } &&
             (condition.expectedEnabled == null ||
                 node.enabled == condition.expectedEnabled) &&
             (condition.expectedClickable == null ||
                 node.clickable == condition.expectedClickable)
+    }
+
+    private fun nodeMatchesRegion(
+        node: UiNodeSnapshot,
+        condition: AutomationCondition.TextExists,
+    ): Boolean = nodeMatchesRegion(
+        node,
+        condition.hasRegion(),
+        condition.regionLeft,
+        condition.regionTop,
+        condition.regionRight,
+        condition.regionBottom,
+    )
+
+    private fun nodeMatchesRegion(
+        node: UiNodeSnapshot,
+        condition: AutomationCondition.UiState,
+    ): Boolean = nodeMatchesRegion(
+        node,
+        condition.hasRegion(),
+        condition.regionLeft,
+        condition.regionTop,
+        condition.regionRight,
+        condition.regionBottom,
+    )
+
+    private fun nodeMatchesRegion(
+        node: UiNodeSnapshot,
+        hasRegion: Boolean,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+    ): Boolean {
+        if (!hasRegion) return true
+        if (!node.hasBounds) return false
+        return node.left < right && node.right > left && node.top < bottom && node.bottom > top
     }
 
     fun colorsMatch(actual: Int, expected: Int, tolerance: Int): Boolean =

@@ -70,4 +70,44 @@ class ConditionLogicTest {
         assertTrue(ConditionLogic.colorsMatch(0xFF102030.toInt(), 0xFF122331.toInt(), 3))
         assertFalse(ConditionLogic.colorsMatch(0xFF102030.toInt(), 0xFF202030.toInt(), 3))
     }
+
+    @Test
+    fun matchesTextOnlyInsideConfiguredRegion() {
+        val nodes = listOf(
+            UiNodeSnapshot(
+                values = listOf("発売中"),
+                enabled = true,
+                clickable = true,
+                left = 100,
+                top = 500,
+                right = 300,
+                bottom = 600,
+            ),
+            UiNodeSnapshot(
+                values = listOf("発売中"),
+                enabled = true,
+                clickable = true,
+                left = 700,
+                top = 1500,
+                right = 900,
+                bottom = 1600,
+            ),
+        )
+        val condition = AutomationCondition.TextExists(
+            query = "発売中",
+            matchMode = TextMatchMode.EXACT,
+            regionLeft = 650,
+            regionTop = 1400,
+            regionRight = 950,
+            regionBottom = 1700,
+        )
+
+        assertTrue(ConditionLogic.textExists(nodes, condition))
+        assertFalse(
+            ConditionLogic.textExists(
+                nodes,
+                condition.copy(regionLeft = 0, regionTop = 0, regionRight = 400, regionBottom = 700),
+            ),
+        )
+    }
 }

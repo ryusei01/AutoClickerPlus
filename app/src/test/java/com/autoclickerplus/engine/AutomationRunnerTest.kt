@@ -807,6 +807,159 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun elseJumpMaxTimesThenExecutesNextElseAction() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "scroll"
+                        point.x < 300f -> "if2"
+                        point.x < 350f -> "after-limit"
+                        else -> "if3"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> false },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(targetNumber = 2, maxTimes = 2),
+                        AutomationAction.Tap(x = 250f, y = 10f, jitterPx = 0),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("scroll", "if2", "if2", "if2", "after-limit", "if3"),
+            calls,
+        )
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun elseOnlyCappedJumpProceedsToNextRootAction() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "scroll"
+                        point.x < 300f -> "if2"
+                        else -> "if3"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> false },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(targetNumber = 2, maxTimes = 3),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("scroll", "if2", "if2", "if2", "if3"),
+            calls,
+        )
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun nestedBranchJumpToRootRedirectHonorsTargetIndex() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "start"
+                        point.x < 150f -> "else"
+                        else -> "after"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    thenActions = listOf(
+                        AutomationAction.JumpTo(targetPath = "2-E1"),
+                    ),
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(targetNumber = 1),
+                        AutomationAction.Tap(x = 100f, y = 10f, jitterPx = 0),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("start", "start"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun invalidJumpContinuesToNextAction() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(

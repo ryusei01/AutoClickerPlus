@@ -67,6 +67,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
 import com.autoclickerplus.model.MAX_JUMP_TIMES
+import com.autoclickerplus.model.NO_TEXT_REGION
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
 import com.autoclickerplus.model.collectActionPaths
@@ -581,6 +582,65 @@ private fun FlowNodeHeader(
 }
 
 @Composable
+private fun TextRegionFields(
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+    onReplace: (Int, Int, Int, Int) -> Unit,
+) {
+    Column(Modifier.padding(top = 6.dp)) {
+        Text(
+            "検索区域（左上・右下、未設定で画面全体）",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CommitNumberField(
+                value = if (left >= 0) left.toString() else "",
+                label = "左X",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(it, top, right, bottom) }
+                },
+            )
+            CommitNumberField(
+                value = if (top >= 0) top.toString() else "",
+                label = "上Y",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(left, it, right, bottom) }
+                },
+            )
+        }
+        Row(
+            modifier = Modifier.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            CommitNumberField(
+                value = if (right >= 0) right.toString() else "",
+                label = "右X",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(left, top, it, bottom) }
+                },
+            )
+            CommitNumberField(
+                value = if (bottom >= 0) bottom.toString() else "",
+                label = "下Y",
+                modifier = Modifier.weight(1f),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let { onReplace(left, top, right, it) }
+                },
+            )
+        }
+        TextButton(onClick = {
+            onReplace(NO_TEXT_REGION, NO_TEXT_REGION, NO_TEXT_REGION, NO_TEXT_REGION)
+        }) { Text("区域をクリア") }
+    }
+}
+
+@Composable
 private fun CommitNumberField(
     value: String,
     label: String,
@@ -914,6 +974,22 @@ private fun ConditionEditor(
                 TextButton(onClick = {
                     onReplace(condition.copy(matchMode = condition.matchMode.toggled()))
                 }) { Text("一致方法: ${condition.matchMode.label}") }
+                TextRegionFields(
+                    left = condition.regionLeft,
+                    top = condition.regionTop,
+                    right = condition.regionRight,
+                    bottom = condition.regionBottom,
+                    onReplace = { left, top, right, bottom ->
+                        onReplace(
+                            condition.copy(
+                                regionLeft = left,
+                                regionTop = top,
+                                regionRight = right,
+                                regionBottom = bottom,
+                            ),
+                        )
+                    },
+                )
             }
             is AutomationCondition.UiState -> {
                 CommitTextField(
@@ -921,6 +997,22 @@ private fun ConditionEditor(
                     label = "対象文字",
                     modifier = Modifier.fillMaxWidth(),
                     onCommit = { onReplace(condition.copy(query = it)) },
+                )
+                TextRegionFields(
+                    left = condition.regionLeft,
+                    top = condition.regionTop,
+                    right = condition.regionRight,
+                    bottom = condition.regionBottom,
+                    onReplace = { left, top, right, bottom ->
+                        onReplace(
+                            condition.copy(
+                                regionLeft = left,
+                                regionTop = top,
+                                regionRight = right,
+                                regionBottom = bottom,
+                            ),
+                        )
+                    },
                 )
                 Row {
                     TextButton(onClick = {

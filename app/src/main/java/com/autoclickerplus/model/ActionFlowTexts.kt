@@ -32,11 +32,17 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     }
 }
 
+private fun AutomationCondition.TextExists.regionSummary(): String =
+    if (hasRegion()) " 区域(${regionLeft},${regionTop})-(${regionRight},${regionBottom})" else ""
+
+private fun AutomationCondition.UiState.regionSummary(): String =
+    if (hasRegion()) " 区域(${regionLeft},${regionTop})-(${regionRight},${regionBottom})" else ""
+
 fun AutomationCondition.summary(): String = when (this) {
     is AutomationCondition.TextExists ->
-        "文字「${query.ifBlank { "未設定" }}」"
+        "文字「${query.ifBlank { "未設定" }}」${regionSummary()}"
     is AutomationCondition.UiState ->
-        "活性「${query.ifBlank { "未設定" }}」"
+        "活性「${query.ifBlank { "未設定" }}」${regionSummary()}"
     is AutomationCondition.PixelColor ->
         "色(${x}, ${y})"
 }
