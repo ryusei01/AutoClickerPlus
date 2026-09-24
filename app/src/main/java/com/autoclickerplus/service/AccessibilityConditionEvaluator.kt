@@ -2,6 +2,7 @@ package com.autoclickerplus.service
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.os.SystemClock
 import android.view.Display
@@ -92,8 +93,11 @@ class AccessibilityConditionEvaluator(
     private fun captureNodes(): List<UiNodeSnapshot> {
         val root = service.rootInActiveWindow
             ?: throw ConditionEvaluationException("画面の文字情報を取得できません")
+        val metrics = service.resources.displayMetrics
+        val screenWidth = metrics.widthPixels.coerceAtLeast(1)
+        val screenHeight = metrics.heightPixels.coerceAtLeast(1)
         return try {
-            buildList { collectNodes(root, this) }
+            buildList { collectNodes(root, this, screenWidth, screenHeight) }
         } finally {
             @Suppress("DEPRECATION")
             root.recycle()
@@ -103,8 +107,21 @@ class AccessibilityConditionEvaluator(
     private fun collectNodes(
         node: AccessibilityNodeInfo,
         destination: MutableList<UiNodeSnapshot>,
+        screenWidth: Int,
+        screenHeight: Int,
     ) {
         if (node.isVisibleToUser && node.packageName != service.packageName) {
+            val bounds = Rect().also(node::getBoundsInScreen)
+            val normalizedCenterX = if (bounds.width() > 0) {
+                (bounds.exactCenterX() / screenWidth.toFloat()).coerceIn(0f, 1f)
+            } else {
+                null
+            }
+            val normalizedCenterY = if (bounds.height() > 0) {
+                (bounds.exactCenterY() / screenHeight.toFloat()).coerceIn(0f, 1f)
+            } else {
+                null
+            }
             destination += UiNodeSnapshot(
                 values = listOfNotNull(
                     node.text?.toString(),
@@ -117,12 +134,14 @@ class AccessibilityConditionEvaluator(
                 ),
                 enabled = node.isEnabled,
                 clickable = node.isClickable,
+                normalizedCenterX = normalizedCenterX,
+                normalizedCenterY = normalizedCenterY,
             )
         }
         for (index in 0 until node.childCount) {
             val child = node.getChild(index) ?: continue
             try {
-                collectNodes(child, destination)
+                collectNodes(child, destination, screenWidth, screenHeight)
             } finally {
                 @Suppress("DEPRECATION")
                 child.recycle()

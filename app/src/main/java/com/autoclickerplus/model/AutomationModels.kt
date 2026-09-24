@@ -93,6 +93,7 @@ sealed class AutomationCondition {
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val region: ConditionRegion = ConditionRegion.ANY,
     ) : AutomationCondition()
 
     @Serializable
@@ -101,6 +102,7 @@ sealed class AutomationCondition {
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val region: ConditionRegion = ConditionRegion.ANY,
         val expectedEnabled: Boolean? = true,
         val expectedClickable: Boolean? = null,
     ) : AutomationCondition()
@@ -126,6 +128,20 @@ enum class ConditionOperator {
 enum class TextMatchMode {
     EXACT,
     CONTAINS,
+}
+
+@Serializable
+enum class ConditionRegion {
+    ANY,
+    TOP_LEFT,
+    TOP_CENTER,
+    TOP_RIGHT,
+    MIDDLE_LEFT,
+    CENTER,
+    MIDDLE_RIGHT,
+    BOTTOM_LEFT,
+    BOTTOM_CENTER,
+    BOTTOM_RIGHT,
 }
 
 @Serializable

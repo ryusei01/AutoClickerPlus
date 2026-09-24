@@ -64,6 +64,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
+import com.autoclickerplus.model.ConditionRegion
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
 import com.autoclickerplus.model.MAX_JUMP_TIMES
@@ -71,6 +72,7 @@ import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
 import com.autoclickerplus.model.collectActionPaths
 import com.autoclickerplus.model.jumpTargetLabel
+import com.autoclickerplus.model.label
 import com.autoclickerplus.model.resolvedTargetPath
 import com.autoclickerplus.model.summary
 import com.autoclickerplus.model.AutomationConfig
@@ -914,6 +916,9 @@ private fun ConditionEditor(
                 TextButton(onClick = {
                     onReplace(condition.copy(matchMode = condition.matchMode.toggled()))
                 }) { Text("一致方法: ${condition.matchMode.label}") }
+                TextButton(onClick = {
+                    onReplace(condition.copy(region = condition.region.nextRegion()))
+                }) { Text("区域: ${condition.region.label}") }
             }
             is AutomationCondition.UiState -> {
                 CommitTextField(
@@ -937,6 +942,9 @@ private fun ConditionEditor(
                         ))
                     }) { Text("clickable: ${condition.expectedClickable.expectedLabel}") }
                 }
+                TextButton(onClick = {
+                    onReplace(condition.copy(region = condition.region.nextRegion()))
+                }) { Text("区域: ${condition.region.label}") }
             }
             is AutomationCondition.PixelColor -> {
                 OutlinedButton(onClick = onPickColor) {
@@ -1075,6 +1083,19 @@ private val Boolean?.expectedLabel: String
         true -> "true"
         false -> "false"
     }
+
+private fun ConditionRegion.nextRegion(): ConditionRegion = when (this) {
+    ConditionRegion.ANY -> ConditionRegion.TOP_LEFT
+    ConditionRegion.TOP_LEFT -> ConditionRegion.TOP_CENTER
+    ConditionRegion.TOP_CENTER -> ConditionRegion.TOP_RIGHT
+    ConditionRegion.TOP_RIGHT -> ConditionRegion.MIDDLE_LEFT
+    ConditionRegion.MIDDLE_LEFT -> ConditionRegion.CENTER
+    ConditionRegion.CENTER -> ConditionRegion.MIDDLE_RIGHT
+    ConditionRegion.MIDDLE_RIGHT -> ConditionRegion.BOTTOM_LEFT
+    ConditionRegion.BOTTOM_LEFT -> ConditionRegion.BOTTOM_CENTER
+    ConditionRegion.BOTTOM_CENTER -> ConditionRegion.BOTTOM_RIGHT
+    ConditionRegion.BOTTOM_RIGHT -> ConditionRegion.ANY
+}
 
 @Composable
 private fun WaitCard(

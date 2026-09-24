@@ -28,6 +28,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.ConditionRegion
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
@@ -37,6 +38,7 @@ import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
 import com.autoclickerplus.model.MAX_WAIT_JITTER_MS
 import com.autoclickerplus.model.collectActionPaths
 import com.autoclickerplus.model.jumpTargetLabel
+import com.autoclickerplus.model.label
 import com.autoclickerplus.model.resolvedTargetPath
 import kotlin.math.roundToInt
 
@@ -578,6 +580,12 @@ class FloatingEditorOverlay(
                         condition.copy(matchMode = condition.matchMode.toggled()),
                     )
                 })
+                addView(smallButton("区域:${condition.region.label}", true) {
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.copy(region = condition.region.nextRegion()),
+                    )
+                })
             }
             is AutomationCondition.UiState -> {
                 addView(textField("対象文字", condition.query) {
@@ -607,6 +615,12 @@ class FloatingEditorOverlay(
                             ),
                         )
                     })
+                })
+                addView(smallButton("区域:${condition.region.label}", true) {
+                    callbacks.onReplaceCondition(
+                        blockId,
+                        condition.copy(region = condition.region.nextRegion()),
+                    )
                 })
             }
             is AutomationCondition.PixelColor -> {
@@ -917,6 +931,19 @@ class FloatingEditorOverlay(
 
     private val TextMatchMode.displayName: String
         get() = if (this == TextMatchMode.EXACT) "完全一致" else "部分一致"
+
+    private fun ConditionRegion.nextRegion(): ConditionRegion = when (this) {
+        ConditionRegion.ANY -> ConditionRegion.TOP_LEFT
+        ConditionRegion.TOP_LEFT -> ConditionRegion.TOP_CENTER
+        ConditionRegion.TOP_CENTER -> ConditionRegion.TOP_RIGHT
+        ConditionRegion.TOP_RIGHT -> ConditionRegion.MIDDLE_LEFT
+        ConditionRegion.MIDDLE_LEFT -> ConditionRegion.CENTER
+        ConditionRegion.CENTER -> ConditionRegion.MIDDLE_RIGHT
+        ConditionRegion.MIDDLE_RIGHT -> ConditionRegion.BOTTOM_LEFT
+        ConditionRegion.BOTTOM_LEFT -> ConditionRegion.BOTTOM_CENTER
+        ConditionRegion.BOTTOM_CENTER -> ConditionRegion.BOTTOM_RIGHT
+        ConditionRegion.BOTTOM_RIGHT -> ConditionRegion.ANY
+    }
 
     private fun Boolean?.nextExpected(): Boolean? = when (this) {
         null -> true

@@ -196,11 +196,21 @@ class AutomationRunner(
             val action = currentActions[index]
             val outcome = executeAction(action, rootActions, bounds)
             val waitAfterJump = outcome is BranchOutcome.Jump && action is AutomationAction.JumpTo
-            if (outcome is BranchOutcome.Continue || waitAfterJump) {
+            if (outcome is BranchOutcome.Continue ||
+                outcome is BranchOutcome.SkipCurrentBranch ||
+                waitAfterJump
+            ) {
                 wait(randomizer.waitMs(action.waitAfterMs, action.waitJitterMs))
             }
             when (outcome) {
                 BranchOutcome.Continue -> index++
+                BranchOutcome.SkipCurrentBranch -> {
+                    if (currentActions === rootActions) {
+                        index++
+                    } else {
+                        return BranchOutcome.Continue
+                    }
+                }
                 is BranchOutcome.Jump -> {
                     if (!allowJump) return outcome
                     val target = resolveJumpTarget(rootActions, outcome.targetPath)
@@ -307,7 +317,7 @@ class AutomationRunner(
                 if (action.maxTimes > 0) {
                     val used = jumpUseCounts[action.id] ?: 0
                     if (used >= action.maxTimes) {
-                        return BranchOutcome.Continue
+                        return BranchOutcome.SkipCurrentBranch
                     }
                     jumpUseCounts[action.id] = used + 1
                 }
@@ -319,6 +329,7 @@ class AutomationRunner(
 
     private sealed class BranchOutcome {
         data object Continue : BranchOutcome()
+        data object SkipCurrentBranch : BranchOutcome()
         data class Jump(val targetPath: String) : BranchOutcome()
     }
 

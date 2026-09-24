@@ -33,10 +33,28 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
 }
 
 fun AutomationCondition.summary(): String = when (this) {
-    is AutomationCondition.TextExists ->
-        "文字「${query.ifBlank { "未設定" }}」"
-    is AutomationCondition.UiState ->
-        "活性「${query.ifBlank { "未設定" }}」"
+    is AutomationCondition.TextExists -> {
+        val regionText = if (region == ConditionRegion.ANY) "" else " @${region.label}"
+        "文字「${query.ifBlank { "未設定" }}」$regionText"
+    }
+    is AutomationCondition.UiState -> {
+        val regionText = if (region == ConditionRegion.ANY) "" else " @${region.label}"
+        "活性「${query.ifBlank { "未設定" }}」$regionText"
+    }
     is AutomationCondition.PixelColor ->
         "色(${x}, ${y})"
 }
+
+val ConditionRegion.label: String
+    get() = when (this) {
+        ConditionRegion.ANY -> "全体"
+        ConditionRegion.TOP_LEFT -> "左上"
+        ConditionRegion.TOP_CENTER -> "上"
+        ConditionRegion.TOP_RIGHT -> "右上"
+        ConditionRegion.MIDDLE_LEFT -> "左"
+        ConditionRegion.CENTER -> "中央"
+        ConditionRegion.MIDDLE_RIGHT -> "右"
+        ConditionRegion.BOTTOM_LEFT -> "左下"
+        ConditionRegion.BOTTOM_CENTER -> "下"
+        ConditionRegion.BOTTOM_RIGHT -> "右下"
+    }
