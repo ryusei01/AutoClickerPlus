@@ -8,6 +8,8 @@
     <string name="empty_actions">アクションがありません。上のボタンから追加してください。</string>
     <string name="repeat_until_stop">STOPまで</string>
     <string name="repeat_count">回数指定</string>
-    <string name="color_picker_title">色を取得する位置</string>
+    <string name="color_picker_title">色を取る位置（照準の中央）</string>
+    <string name="color_picker_preview_empty">位置を決めたら「色を確認」</string>
+    <string name="color_picker_check">色を確認</string>
     <string name="region_picker_title">文字を判別する区域</string>
 </resources>

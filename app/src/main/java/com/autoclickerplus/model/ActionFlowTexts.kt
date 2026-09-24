@@ -27,7 +27,11 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     is AutomationAction.BreakLoop -> "到達したら繰り返しを終了"
     is AutomationAction.Wait -> "${durationMs}ms待つ ±${waitJitterMs}ms"
     is AutomationAction.JumpTo -> {
-        val limit = if (maxTimes > 0) " 最大${maxTimes}回" else ""
+        val limit = when {
+            maxTimes <= 0 -> ""
+            limitScope == JumpLimitScope.BRANCH_VISIT -> " 最大${maxTimes}回(IFごと)"
+            else -> " 最大${maxTimes}回(通算)"
+        }
         "${jumpTargetLabel(resolvedTargetPath(), fromPath)}$limit  → ${waitAfterMs}ms ±${waitJitterMs}"
     }
 }

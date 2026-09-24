@@ -6,7 +6,6 @@ import android.graphics.Path
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import com.autoclickerplus.data.AutomationRepository
@@ -22,7 +21,12 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ScreenRegion
+import com.autoclickerplus.model.newBreak
+import com.autoclickerplus.model.newIf
+import com.autoclickerplus.model.newJumpTo
+import com.autoclickerplus.model.newSwipe
 import com.autoclickerplus.model.newTap
+import com.autoclickerplus.model.newWait
 import com.autoclickerplus.model.regionOrNull
 import com.autoclickerplus.model.withRegion
 import kotlinx.coroutines.CancellableContinuation
@@ -68,28 +72,28 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 onStart = ::startConfiguredAutomation,
                 onStop = { runner.stop() },
                 onAddTap = { addAndPick(currentConfig.newTap()) },
-                onAddSwipe = { addAndPick(AutomationAction.Swipe()) },
+                onAddSwipe = { addAndPick(currentConfig.newSwipe()) },
                 onAddIf = {
                     mutateConfig {
-                        AutomationConfigEditor.add(it, AutomationAction.IfBlock())
+                        AutomationConfigEditor.add(it, it.newIf())
                     }
                     overlay.showEditor()
                 },
                 onAddBreak = {
                     mutateConfig {
-                        AutomationConfigEditor.add(it, AutomationAction.BreakLoop())
+                        AutomationConfigEditor.add(it, it.newBreak())
                     }
                     overlay.showEditor()
                 },
                 onAddWait = {
                     mutateConfig {
-                        AutomationConfigEditor.add(it, AutomationAction.Wait())
+                        AutomationConfigEditor.add(it, it.newWait())
                     }
                     overlay.showEditor()
                 },
                 onAddJumpTo = {
                     mutateConfig {
-                        AutomationConfigEditor.add(it, AutomationAction.JumpTo())
+                        AutomationConfigEditor.add(it, it.newJumpTo())
                     }
                     overlay.showEditor()
                 },
@@ -322,28 +326,27 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 as? AutomationAction.IfBlock ?: return@launch
             val condition = block.conditions.firstOrNull { it.id == conditionId }
                 as? AutomationCondition.PixelColor ?: return@launch
-            overlay.showColorPicker(condition.x, condition.y) { x, y ->
-                serviceScope.launch {
-                    runCatching { conditionEvaluator.sampleColor(x, y) }
-                        .onSuccess { color ->
-                            updateConfig {
-                                AutomationConfigEditor.replaceCondition(
-                                    it,
-                                    ifBlockId,
-                                    condition.copy(x = x, y = y, argb = color),
-                                )
-                            }
+            overlay.showColorPicker(
+                initialX = condition.x,
+                initialY = condition.y,
+                onSample = { x, y, done ->
+                    serviceScope.launch {
+                        done(runCatching { conditionEvaluator.sampleColor(x, y) })
+                    }
+                },
+                onDone = { x, y, color ->
+                    serviceScope.launch {
+                        updateConfig {
+                            AutomationConfigEditor.replaceCondition(
+                                it,
+                                ifBlockId,
+                                condition.copy(x = x, y = y, argb = color),
+                            )
                         }
-                        .onFailure {
-                            Toast.makeText(
-                                this@AutoClickAccessibilityService,
-                                "色を取得できません: ${it.message}",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                    overlay.showEditor()
-                }
-            }
+                        overlay.showEditor()
+                    }
+                },
+            )
         }
     }
 
@@ -427,17 +430,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             if (!started) mainHandler.post { continuation.resumeIfActive(false) }
         }
 
-    @Suppress("DEPRECATION")
-    private fun screenBounds(): ScreenBounds {
-        val windowManager = getSystemService(WindowManager::class.java)
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val bounds = windowManager.currentWindowMetrics.bounds
-            ScreenBounds(bounds.width(), bounds.height())
-        } else {
-            val metrics = resources.displayMetrics
-            ScreenBounds(metrics.widthPixels, metrics.heightPixels)
-        }
-    }
+    private fun screenBounds(): ScreenBounds = overlayScreenBounds()
 
     private fun CancellableContinuation<Boolean>.resumeIfActive(value: Boolean) {
         if (isActive) resume(value)

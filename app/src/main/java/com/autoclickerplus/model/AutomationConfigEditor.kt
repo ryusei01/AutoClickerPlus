@@ -15,12 +15,17 @@ object AutomationConfigEditor {
     fun replace(config: AutomationConfig, action: AutomationAction): AutomationConfig =
         config.copy(actions = replaceIn(config.actions, action)).normalized()
 
-    fun remove(config: AutomationConfig, actionId: String): AutomationConfig =
-        config.copy(actions = removeFrom(config.actions, actionId)).normalized()
+    fun remove(config: AutomationConfig, actionId: String): AutomationConfig {
+        val before = collectActionIdPaths(config.actions)
+        val removed = removeFrom(config.actions, actionId)
+        return config.copy(actions = remapJumpTargets(removed, before)).normalized()
+    }
 
     fun move(config: AutomationConfig, actionId: String, offset: Int): AutomationConfig {
+        val before = collectActionIdPaths(config.actions)
         val (actions, changed) = moveIn(config.actions, actionId, offset)
-        return if (changed) config.copy(actions = actions).normalized() else config
+        if (!changed) return config
+        return config.copy(actions = remapJumpTargets(actions, before)).normalized()
     }
 
     fun addToBranch(
@@ -83,6 +88,21 @@ object AutomationConfigEditor {
 
     fun setDefaultTapWaitAfterMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
         config.copy(defaultTapWaitAfterMs = waitMs).normalized()
+
+    fun setDefaultSwipeWaitAfterMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
+        config.copy(defaultSwipeWaitAfterMs = waitMs).normalized()
+
+    fun setDefaultIfWaitAfterMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
+        config.copy(defaultIfWaitAfterMs = waitMs).normalized()
+
+    fun setDefaultWaitDurationMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
+        config.copy(defaultWaitDurationMs = waitMs).normalized()
+
+    fun setDefaultWaitWaitAfterMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
+        config.copy(defaultWaitWaitAfterMs = waitMs).normalized()
+
+    fun setDefaultJumpWaitAfterMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
+        config.copy(defaultJumpWaitAfterMs = waitMs).normalized()
 
     fun sequenceNumber(config: AutomationConfig, actionId: String): Int? =
         config.actions.indexOfFirst { it.id == actionId }

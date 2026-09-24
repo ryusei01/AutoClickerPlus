@@ -147,12 +147,20 @@ class AutomationConfigEditorTest {
 
     @Test
     fun jumpToAndWaitActionsAreNormalized() {
+        val unset = AutomationConfigEditor.add(
+            AutomationConfig(),
+            AutomationAction.JumpTo(targetPath = "", targetNumber = 0),
+        ).actions.single() as AutomationAction.JumpTo
+        assertEquals("", unset.targetPath)
+        assertEquals(0, unset.targetNumber)
+        assertEquals("番号未設定", jumpTargetLabel(unset.resolvedTargetPath(), "1"))
+
         val jump = AutomationConfigEditor.add(
             AutomationConfig(),
-            AutomationAction.JumpTo(targetNumber = 0),
+            AutomationAction.JumpTo(targetNumber = 2),
         ).actions.single() as AutomationAction.JumpTo
-        assertEquals(1, jump.targetNumber)
-        assertEquals("1", jump.targetPath)
+        assertEquals(2, jump.targetNumber)
+        assertEquals("2", jump.targetPath)
         assertEquals("2へ進む", jumpTargetLabel("2", "1"))
         assertEquals("1へ戻る", jumpTargetLabel("1", "3"))
         val wait = AutomationConfigEditor.add(
@@ -160,6 +168,76 @@ class AutomationConfigEditorTest {
             AutomationAction.Wait(durationMs = 9_999_999L),
         ).actions.single() as AutomationAction.Wait
         assertEquals(MAX_WAIT_MS, wait.durationMs)
+    }
+
+    @Test
+    fun removingActionRemapsJumpTargetsToSameAction() {
+        val tapA = AutomationAction.Tap(id = "a")
+        val tapB = AutomationAction.Tap(id = "b")
+        val tapC = AutomationAction.Tap(id = "c")
+        val jumpToC = AutomationAction.JumpTo(id = "jump", targetPath = "3")
+        var config = AutomationConfig(actions = listOf(tapA, tapB, tapC, jumpToC))
+
+        config = AutomationConfigEditor.remove(config, "b")
+
+        assertEquals(listOf("a", "c", "jump"), config.actions.map { it.id })
+        val jump = config.actions[2] as AutomationAction.JumpTo
+        assertEquals("2", jump.targetPath)
+        assertEquals("c", AutomationConfigEditor.findAction(config, "c")?.id)
+    }
+
+    @Test
+    fun removingJumpTargetClearsJumpTo() {
+        val tapA = AutomationAction.Tap(id = "a")
+        val tapB = AutomationAction.Tap(id = "b")
+        val jumpToB = AutomationAction.JumpTo(id = "jump", targetPath = "2")
+        var config = AutomationConfig(actions = listOf(tapA, tapB, jumpToB))
+
+        config = AutomationConfigEditor.remove(config, "b")
+
+        val jump = config.actions[1] as AutomationAction.JumpTo
+        assertEquals("", jump.targetPath)
+        assertEquals(0, jump.targetNumber)
+        assertEquals("番号未設定", jumpTargetLabel(jump.resolvedTargetPath()))
+    }
+
+    @Test
+    fun movingActionRemapsNestedJumpTargets() {
+        val tap = AutomationAction.Tap(id = "tap")
+        val nestedJump = AutomationAction.JumpTo(id = "jump", targetPath = "1")
+        val block = AutomationAction.IfBlock(
+            id = "if",
+            elseActions = listOf(nestedJump),
+        )
+        val swipe = AutomationAction.Swipe(id = "swipe")
+        var config = AutomationConfig(actions = listOf(tap, block, swipe))
+
+        // swipe を先頭へ → tap は 2 番に
+        config = AutomationConfigEditor.move(config, "swipe", -2)
+
+        assertEquals(listOf("swipe", "tap", "if"), config.actions.map { it.id })
+        val jump = (
+            AutomationConfigEditor.findAction(config, "jump") as AutomationAction.JumpTo
+        )
+        assertEquals("2", jump.targetPath)
+    }
+
+    @Test
+    fun removingNestedActionRemapsSiblingJumpInBranch() {
+        val first = AutomationAction.Tap(id = "t1")
+        val second = AutomationAction.Tap(id = "t2")
+        val jump = AutomationAction.JumpTo(id = "jump", targetPath = "1-T2")
+        val block = AutomationAction.IfBlock(
+            id = "if",
+            thenActions = listOf(first, second, jump),
+        )
+        var config = AutomationConfig(actions = listOf(block))
+
+        config = AutomationConfigEditor.remove(config, "t1")
+
+        val remapped = AutomationConfigEditor.findAction(config, "jump") as AutomationAction.JumpTo
+        assertEquals("1-T1", remapped.targetPath)
+        assertEquals("t2", AutomationConfigEditor.findAction(config, "t2")?.id)
     }
 
     @Test
@@ -172,6 +250,27 @@ class AutomationConfigEditorTest {
         val tap = AutomationConfigEditor.add(config, config.newTap())
             .actions.single() as AutomationAction.Tap
         assertEquals(750L, tap.waitAfterMs)
+    }
+
+    @Test
+    fun actionDefaultsApplyToNewActions() {
+        var config = AutomationConfig()
+        config = AutomationConfigEditor.setDefaultSwipeWaitAfterMs(config, 111L)
+        config = AutomationConfigEditor.setDefaultIfWaitAfterMs(config, 222L)
+        config = AutomationConfigEditor.setDefaultWaitDurationMs(config, 333L)
+        config = AutomationConfigEditor.setDefaultWaitWaitAfterMs(config, 444L)
+        config = AutomationConfigEditor.setDefaultJumpWaitAfterMs(config, 555L)
+
+        val swipe = config.newSwipe()
+        val ifBlock = config.newIf()
+        val wait = config.newWait()
+        val jump = config.newJumpTo()
+
+        assertEquals(111L, swipe.waitAfterMs)
+        assertEquals(222L, ifBlock.waitAfterMs)
+        assertEquals(333L, wait.durationMs)
+        assertEquals(444L, wait.waitAfterMs)
+        assertEquals(555L, jump.waitAfterMs)
     }
 
     @Test

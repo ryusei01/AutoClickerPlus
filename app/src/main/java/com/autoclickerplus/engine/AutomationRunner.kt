@@ -5,6 +5,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.JumpLimitScope
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.resolveJumpTarget
 import com.autoclickerplus.model.resolvedTargetPath
@@ -201,28 +202,39 @@ class AutomationRunner(
         var currentActions = actions
         var index = startIndex
         var jumps = 0
+        var resumeFromJump = startIndex > 0
         while (index < currentActions.size) {
             val action = currentActions[index]
             if (!action.enabled) {
                 index++
+                resumeFromJump = false
                 continue
             }
             mutableCurrentPath.value = AutomationConfigEditor.sequencePath(
                 AutomationConfig(actions = rootActions),
                 action.id,
             ) ?: "?"
-            val outcome = executeAction(action, rootActions, bounds)
+            val outcome = executeAction(
+                action = action,
+                rootActions = rootActions,
+                bounds = bounds,
+                enteredByJump = resumeFromJump,
+            )
             val waitAfterJump = outcome is BranchOutcome.Jump && action is AutomationAction.JumpTo
             if (outcome is BranchOutcome.Continue || waitAfterJump) {
                 wait(randomizer.waitMs(action.waitAfterMs, action.waitJitterMs))
             }
             when (outcome) {
-                BranchOutcome.Continue -> index++
+                BranchOutcome.Continue -> {
+                    index++
+                    resumeFromJump = false
+                }
                 is BranchOutcome.Jump -> {
                     if (!allowJump) return outcome
                     val target = resolveJumpTarget(rootActions, outcome.targetPath)
                     if (target == null) {
                         index++
+                        resumeFromJump = false
                         continue
                     }
                     jumps++
@@ -231,11 +243,13 @@ class AutomationRunner(
                     }
                     if (target.actions === currentActions) {
                         index = target.index
+                        resumeFromJump = true
                         continue
                     }
                     if (target.actions === rootActions) {
                         currentActions = rootActions
                         index = target.index
+                        resumeFromJump = true
                         continue
                     }
                     var nestedOutcome = executeActions(
@@ -267,6 +281,7 @@ class AutomationRunner(
                         )
                     }
                     if (resumeAtJump) {
+                        resumeFromJump = true
                         continue
                     }
                     if (nestedOutcome is BranchOutcome.Jump) {
@@ -274,6 +289,7 @@ class AutomationRunner(
                     }
                     currentActions = rootActions
                     index = target.rootIndexAfter
+                    resumeFromJump = false
                 }
             }
         }
@@ -284,6 +300,7 @@ class AutomationRunner(
         action: AutomationAction,
         rootActions: List<AutomationAction>,
         bounds: ScreenBounds,
+        enteredByJump: Boolean = false,
     ): BranchOutcome {
         when (action) {
             is AutomationAction.Tap -> {
@@ -312,8 +329,12 @@ class AutomationRunner(
             }
             is AutomationAction.IfBlock -> {
                 val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
+                val branch = if (matched) action.thenActions else action.elseActions
+                if (!enteredByJump) {
+                    resetBranchVisitJumpCounts(branch)
+                }
                 val branchOutcome = executeActions(
-                    actions = if (matched) action.thenActions else action.elseActions,
+                    actions = branch,
                     rootActions = rootActions,
                     bounds = bounds,
                     allowJump = false,
@@ -336,6 +357,18 @@ class AutomationRunner(
             }
         }
         return BranchOutcome.Continue
+    }
+
+    private fun resetBranchVisitJumpCounts(actions: List<AutomationAction>) {
+        actions.forEach { action ->
+            if (
+                action is AutomationAction.JumpTo &&
+                action.maxTimes > 0 &&
+                action.limitScope == JumpLimitScope.BRANCH_VISIT
+            ) {
+                jumpUseCounts.remove(action.id)
+            }
+        }
     }
 
     private sealed class BranchOutcome {

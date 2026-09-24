@@ -99,7 +99,7 @@ class OverlayController(
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(4), dp(6), dp(4), dp(6))
-            background = roundedBackground(0xF2292730.toInt(), dp(16).toFloat())
+            background = roundedBackground(PANEL_BG, dp(16).toFloat())
         }
         val dragHandle = TextView(service).apply {
             text = "↕"
@@ -108,6 +108,7 @@ class OverlayController(
             gravity = Gravity.CENTER
             setPadding(0, dp(4), 0, dp(4))
             contentDescription = "パネルを移動"
+            background = roundedBackground(BUTTON_BG, dp(10).toFloat())
         }
         val actions = LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
@@ -119,10 +120,17 @@ class OverlayController(
             textSize = 14f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setPadding(dp(4), dp(4), dp(4), dp(4))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
             minWidth = dp(36)
+            background = roundedBackground(BUTTON_BG, dp(10).toFloat())
         }
-        actions.addView(status)
+        actions.addView(
+            status,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { setMargins(0, 0, 0, dp(4)) },
+        )
         actions.addView(iconButton(R.drawable.ic_play, "開始", callbacks.onStart))
         actions.addView(iconButton(R.drawable.ic_stop, "停止", callbacks.onStop))
         actions.addView(iconButton(R.drawable.ic_edit, "アクションを編集") {
@@ -239,16 +247,16 @@ class OverlayController(
     fun showColorPicker(
         initialX: Int,
         initialY: Int,
-        onDone: (Int, Int) -> Unit,
+        onSample: (x: Int, y: Int, done: (Result<Int>) -> Unit) -> Unit,
+        onDone: (x: Int, y: Int, color: Int) -> Unit,
     ) {
         removeControls()
         editor.hide()
         picker.showColor(
             initialX = initialX,
             initialY = initialY,
-            onDone = { x, y ->
-                onDone(x, y)
-            },
+            onSample = onSample,
+            onDone = onDone,
             onCancel = { editor.show(config) },
         )
     }
@@ -291,10 +299,12 @@ class OverlayController(
     ) = ImageButton(service).apply {
         setImageResource(icon)
         contentDescription = description
-        setBackgroundColor(Color.TRANSPARENT)
-        setPadding(dp(7), dp(7), dp(7), dp(7))
+        background = roundedBackground(BUTTON_BG, dp(10).toFloat())
+        setPadding(dp(8), dp(8), dp(8), dp(8))
         setOnClickListener(onClick)
-        layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+        layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+            setMargins(0, dp(3), 0, dp(3))
+        }
     }
 
     private fun iconButton(icon: Int, description: String, onClick: () -> Unit) =
@@ -363,4 +373,9 @@ class OverlayController(
 
     private fun dp(value: Int): Int =
         (value * service.resources.displayMetrics.density).roundToInt()
+
+    private companion object {
+        const val PANEL_BG = 0xFF1E1C24.toInt()
+        const val BUTTON_BG = 0xFF3A3745.toInt()
+    }
 }

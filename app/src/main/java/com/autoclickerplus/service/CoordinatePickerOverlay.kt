@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -15,6 +16,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.autoclickerplus.R
+import com.autoclickerplus.engine.ScreenBounds
 import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
@@ -36,6 +38,13 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     private var bulkConfig: AutomationConfig? = null
     private var bulkOnDone: ((AutomationConfig) -> Unit)? = null
     private var bulkOnCancel: (() -> Unit)? = null
+
+    private var colorPreviewSwatch: View? = null
+    private var colorPreviewLabel: TextView? = null
+    private var colorSampleRequest: ((Int, Int, (Result<Int>) -> Unit) -> Unit)? = null
+    private var lastColorSample: Int? = null
+    private var lastColorSampleX: Int = Int.MIN_VALUE
+    private var lastColorSampleY: Int = Int.MIN_VALUE
 
     val isVisible: Boolean get() = markerWindows.isNotEmpty() || controlBar != null
 
@@ -169,30 +178,51 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     fun showColor(
         initialX: Int,
         initialY: Int,
-        onDone: (Int, Int) -> Unit,
+        onSample: (x: Int, y: Int, done: (Result<Int>) -> Unit) -> Unit,
+        onDone: (x: Int, y: Int, color: Int) -> Unit,
         onCancel: () -> Unit,
     ) {
         hide()
-        markerWindows += addMarker(
-            label = "色",
-            color = Color.rgb(123, 31, 162),
-            centerX = initialX.toFloat(),
-            centerY = initialY.toFloat(),
+        colorSampleRequest = onSample
+        val screen = service.overlayScreenBounds()
+        val startX = if (initialX <= 0 && initialY <= 0) screen.width / 2f else initialX.toFloat()
+        val startY = if (initialX <= 0 && initialY <= 0) screen.height / 2f else initialY.toFloat()
+        markerWindows += addColorCrosshair(
+            centerX = startX,
+            centerY = startY,
+            onMoved = { lastColorSample = null },
         )
-        showControlBar(
-            title = service.getString(R.string.color_picker_title),
+        showColorControlBar(
+            onCheck = { sampleColorAtMarker { /* preview only */ } },
             onDone = {
-                val marker = markerWindows.firstOrNull() ?: return@showControlBar
+                val marker = markerWindows.firstOrNull() ?: return@showColorControlBar
                 val x = marker.centerX.roundToInt()
                 val y = marker.centerY.roundToInt()
-                hide()
-                onDone(x, y)
+                val cached = lastColorSample
+                    ?.takeIf { lastColorSampleX == x && lastColorSampleY == y }
+                if (cached != null) {
+                    hide()
+                    onDone(x, y, cached)
+                    return@showColorControlBar
+                }
+                sampleColorAtMarker { result ->
+                    result.onSuccess { color ->
+                        hide()
+                        onDone(x, y, color)
+                    }.onFailure {
+                        // keep picker open; preview label already shows error
+                    }
+                }
             },
             onCancel = {
                 hide()
                 onCancel()
             },
         )
+        // 開いた直後にも一回プレビュー
+        markerWindows.firstOrNull()?.view?.post {
+            sampleColorAtMarker { }
+        }
     }
 
     fun showRegion(
@@ -257,6 +287,173 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         bulkConfig = null
         bulkOnDone = null
         bulkOnCancel = null
+        colorPreviewSwatch = null
+        colorPreviewLabel = null
+        colorSampleRequest = null
+        lastColorSample = null
+        lastColorSampleX = Int.MIN_VALUE
+        lastColorSampleY = Int.MIN_VALUE
+    }
+
+    private fun addColorCrosshair(
+        centerX: Float,
+        centerY: Float,
+        onMoved: (() -> Unit)? = null,
+    ): MarkerWindow {
+        val size = dp(72)
+        val screen = service.overlayScreenBounds()
+        val marker = ColorCrosshairView(service)
+        val params = overlayParams(
+            width = size,
+            height = size,
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            placeMarkerCenter(this, size, centerX, centerY, screen)
+        }
+        makeMarkerDraggable(marker, params, size) {
+            onMoved?.invoke()
+        }
+        windowManager.addView(marker, params)
+        return MarkerWindow(marker, params, size)
+    }
+
+    private fun showColorControlBar(
+        onCheck: () -> Unit,
+        onDone: () -> Unit,
+        onCancel: () -> Unit,
+    ) {
+        val screen = service.overlayScreenBounds()
+        val maxWidth = screen.width - dp(16)
+        val bar = LinearLayout(service).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = roundedBackground(0xFF1E1C24.toInt(), dp(16).toFloat())
+            minimumWidth = dp(240)
+        }
+        val dragHandle = TextView(service).apply {
+            text = "↕"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(4))
+            contentDescription = "位置指定パネルを移動"
+        }
+        val titleView = TextView(service).apply {
+            text = service.getString(R.string.color_picker_title)
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            gravity = Gravity.CENTER
+        }
+        val previewRow = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val swatch = View(service).apply {
+            background = roundedBackground(0xFF555555.toInt(), dp(8).toFloat())
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                setMargins(0, 0, dp(10), 0)
+            }
+        }
+        val previewLabel = TextView(service).apply {
+            text = service.getString(R.string.color_picker_preview_empty)
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        previewRow.addView(swatch)
+        previewRow.addView(previewLabel)
+        colorPreviewSwatch = swatch
+        colorPreviewLabel = previewLabel
+
+        val checkButton = Button(service).apply {
+            text = service.getString(R.string.color_picker_check)
+            textSize = 14f
+            setOnClickListener { onCheck() }
+        }
+        val buttonRow = LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val cancelButton = Button(service).apply {
+            text = "キャンセル"
+            textSize = 14f
+            setOnClickListener { onCancel() }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(0, 0, dp(4), 0)
+            }
+        }
+        val doneButton = Button(service).apply {
+            text = "決定"
+            textSize = 14f
+            setOnClickListener { onDone() }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(dp(4), 0, 0, 0)
+            }
+        }
+        buttonRow.addView(cancelButton)
+        buttonRow.addView(doneButton)
+        bar.addView(dragHandle)
+        bar.addView(titleView)
+        bar.addView(previewRow)
+        bar.addView(checkButton, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
+        bar.addView(buttonRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(6) })
+
+        val params = overlayParams(
+            width = maxWidth.coerceAtMost(dp(360)),
+            height = WindowManager.LayoutParams.WRAP_CONTENT,
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(24)
+        }
+        makeControlBarDraggable(dragHandle, bar, params)
+        windowManager.addView(bar, params)
+        controlBar = bar
+    }
+
+    private fun sampleColorAtMarker(onFinished: (Result<Int>) -> Unit) {
+        val marker = markerWindows.firstOrNull() ?: return
+        val request = colorSampleRequest ?: return
+        val x = marker.centerX.roundToInt()
+        val y = marker.centerY.roundToInt()
+        colorPreviewLabel?.text = "取得中…"
+        // スクショに照準が写らないよう一時非表示
+        marker.view.visibility = View.INVISIBLE
+        controlBar?.visibility = View.INVISIBLE
+        marker.view.postDelayed({
+            request(x, y) { result ->
+                marker.view.visibility = View.VISIBLE
+                controlBar?.visibility = View.VISIBLE
+                result.onSuccess { color ->
+                    lastColorSample = color
+                    lastColorSampleX = x
+                    lastColorSampleY = y
+                    colorPreviewSwatch?.background =
+                        roundedBackground(color or 0xFF000000.toInt(), dp(8).toFloat())
+                    colorPreviewLabel?.text =
+                        String.format("#%06X  (%d, %d)", color and 0xFFFFFF, x, y)
+                }.onFailure { error ->
+                    lastColorSample = null
+                    colorPreviewLabel?.text = "取得失敗: ${error.message}"
+                }
+                onFinished(result)
+            }
+        }, 80L)
     }
 
     private fun addMarker(
@@ -267,7 +464,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         onMoved: (() -> Unit)? = null,
     ): MarkerWindow {
         val size = dp(54)
-        val metrics = service.resources.displayMetrics
+        val screen = service.overlayScreenBounds()
         val marker = TextView(service).apply {
             text = label
             textSize = if (label.length > 2) 13f else if (label.length > 1) 15f else 19f
@@ -281,11 +478,11 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             height = size,
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (centerX - size / 2f).roundToInt().coerceIn(0, metrics.widthPixels - size)
-            y = (centerY - size / 2f).roundToInt().coerceIn(0, metrics.heightPixels - size)
+            placeMarkerCenter(this, size, centerX, centerY, screen)
         }
         makeMarkerDraggable(marker, params, size, onMoved)
         windowManager.addView(marker, params)
@@ -297,13 +494,13 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         onDone: () -> Unit,
         onCancel: () -> Unit,
     ) {
-        val metrics = service.resources.displayMetrics
-        val maxWidth = metrics.widthPixels - dp(16)
+        val screen = service.overlayScreenBounds()
+        val maxWidth = screen.width - dp(16)
         val bar = LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = roundedBackground(0xF2292730.toInt(), dp(16).toFloat())
+            background = roundedBackground(0xFF1E1C24.toInt(), dp(16).toFloat())
             minimumWidth = dp(220)
         }
         val dragHandle = TextView(service).apply {
@@ -358,7 +555,8 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             height = WindowManager.LayoutParams.WRAP_CONTENT,
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(24)
@@ -375,7 +573,8 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             height = WindowManager.LayoutParams.MATCH_PARENT,
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         )
         windowManager.addView(view, params)
         lineView = view
@@ -388,7 +587,8 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             height = WindowManager.LayoutParams.MATCH_PARENT,
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         )
         windowManager.addView(view, params)
         bulkLineView = view
@@ -400,7 +600,6 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         size: Int,
         onMoved: (() -> Unit)? = null,
     ) {
-        val metrics = service.resources.displayMetrics
         var offsetX = 0f
         var offsetY = 0f
         marker.setOnTouchListener { _, event ->
@@ -411,10 +610,10 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    val screen = service.overlayScreenBounds()
                     params.x = (event.rawX - offsetX).roundToInt()
-                        .coerceIn(0, metrics.widthPixels - size)
                     params.y = (event.rawY - offsetY).roundToInt()
-                        .coerceIn(0, metrics.heightPixels - size)
+                    clampMarkerParams(params, size, screen)
                     windowManager.updateViewLayout(marker, params)
                     onMoved?.invoke()
                     true
@@ -434,7 +633,6 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         bar: View,
         params: WindowManager.LayoutParams,
     ) {
-        val metrics = service.resources.displayMetrics
         var downRawX = 0f
         var downRawY = 0f
         var downX = 0
@@ -455,10 +653,11 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    val screen = service.overlayScreenBounds()
                     params.x = (downX + (event.rawX - downRawX).roundToInt())
-                        .coerceIn(0, (metrics.widthPixels - bar.width).coerceAtLeast(0))
+                        .coerceIn(0, (screen.width - bar.width).coerceAtLeast(0))
                     params.y = (downY + (event.rawY - downRawY).roundToInt())
-                        .coerceIn(0, (metrics.heightPixels - bar.height).coerceAtLeast(0))
+                        .coerceIn(0, (screen.height - bar.height).coerceAtLeast(0))
                     windowManager.updateViewLayout(bar, params)
                     true
                 }
@@ -524,7 +723,8 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             height = WindowManager.LayoutParams.MATCH_PARENT,
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         )
         windowManager.addView(view, params)
         regionView = view
@@ -573,7 +773,38 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             flags,
             PixelFormat.TRANSLUCENT,
-        )
+        ).also { params ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                params.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+
+    /** マーカー中心を画面端（ナビバー込み）まで移動できるよう、ビューは画面外にはみ出してよい */
+    private fun placeMarkerCenter(
+        params: WindowManager.LayoutParams,
+        size: Int,
+        centerX: Float,
+        centerY: Float,
+        screen: ScreenBounds,
+    ) {
+        val maxX = (screen.width - 1).coerceAtLeast(0).toFloat()
+        val maxY = (screen.height - 1).coerceAtLeast(0).toFloat()
+        params.x = (centerX.coerceIn(0f, maxX) - size / 2f).roundToInt()
+        params.y = (centerY.coerceIn(0f, maxY) - size / 2f).roundToInt()
+    }
+
+    private fun clampMarkerParams(
+        params: WindowManager.LayoutParams,
+        size: Int,
+        screen: ScreenBounds,
+    ) {
+        val maxX = (screen.width - 1).coerceAtLeast(0)
+        val maxY = (screen.height - 1).coerceAtLeast(0)
+        val half = size / 2
+        params.x = params.x.coerceIn(-half, maxX - half)
+        params.y = params.y.coerceIn(-half, maxY - half)
+    }
 
     private fun roundedBackground(color: Int, radius: Float) = GradientDrawable().apply {
         setColor(color)
@@ -610,6 +841,40 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         val endX: Float,
         val endY: Float,
     )
+
+    private class ColorCrosshairView(service: AccessibilityService) : View(service) {
+        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(236, 64, 122)
+            style = Paint.Style.STROKE
+            strokeWidth = service.resources.displayMetrics.density * 3f
+        }
+        private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = service.resources.displayMetrics.density * 2f
+        }
+        private val density = service.resources.displayMetrics.density
+
+        init {
+            contentDescription = "色を取る位置"
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width / 2f
+            val cy = height / 2f
+            val outer = minOf(width, height) / 2f - density * 2f
+            val inner = density * 8f
+            // 中央は塗りつぶさないので、下の実画面の色が見える
+            canvas.drawCircle(cx, cy, outer, ring)
+            canvas.drawCircle(cx, cy, inner, ring)
+            val gap = density * 5f
+            canvas.drawLine(cx, density * 4f, cx, cy - gap, cross)
+            canvas.drawLine(cx, cy + gap, cx, height - density * 4f, cross)
+            canvas.drawLine(density * 4f, cy, cx - gap, cy, cross)
+            canvas.drawLine(cx + gap, cy, width - density * 4f, cy, cross)
+        }
+    }
 
     private class RegionRectView(service: AccessibilityService) : View(service) {
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {

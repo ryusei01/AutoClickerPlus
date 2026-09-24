@@ -28,13 +28,19 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.JumpLimitScope
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.regionOrNull
 import com.autoclickerplus.model.withRegion
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
+import com.autoclickerplus.model.newBreak
+import com.autoclickerplus.model.newIf
+import com.autoclickerplus.model.newJumpTo
+import com.autoclickerplus.model.newSwipe
 import com.autoclickerplus.model.newTap
+import com.autoclickerplus.model.newWait
 import com.autoclickerplus.model.withEnabled
 import com.autoclickerplus.model.MAX_JUMP_TIMES
 import com.autoclickerplus.model.MAX_POSITION_JITTER_PX
@@ -74,12 +80,14 @@ class FloatingEditorOverlay(
 ) {
     private val windowManager = service.getSystemService(WindowManager::class.java)
     private var root: LinearLayout? = null
+    private var scrollView: ScrollView? = null
     private var content: LinearLayout? = null
     private var params: WindowManager.LayoutParams? = null
     private var config = AutomationConfig()
     private val expandedDetailIds = mutableSetOf<String>()
     private val ifTabById = mutableMapOf<String, Int>()
     private var rendering = false
+    private var pendingScrollActionId: String? = null
 
     val isVisible: Boolean get() = root != null
 
@@ -93,7 +101,7 @@ class FloatingEditorOverlay(
         val panel = LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(10))
-            background = roundedBackground(0xF2292730.toInt(), dp(18).toFloat())
+            background = roundedBackground(0xFF1E1C24.toInt(), dp(18).toFloat())
         }
         val header = LinearLayout(service).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -120,6 +128,7 @@ class FloatingEditorOverlay(
 
         val scroll = ScrollView(service).apply {
             isFillViewport = true
+            isSmoothScrollingEnabled = true
         }
         val body = LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
@@ -149,7 +158,8 @@ class FloatingEditorOverlay(
             gravity = Gravity.TOP or Gravity.START
             x = dp(8)
             y = dp(70)
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            // RESIZE だとIMEでパネルが潰れて「落ちた」ように見える
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
         makeDraggable(header.getChildAt(0), panel, windowParams)
         panel.isFocusableInTouchMode = true
@@ -164,6 +174,7 @@ class FloatingEditorOverlay(
         }
         windowManager.addView(panel, windowParams)
         root = panel
+        scrollView = scroll
         content = body
         params = windowParams
         render()
@@ -178,25 +189,37 @@ class FloatingEditorOverlay(
         commitFocusedField()
         root?.let { runCatching { windowManager.removeView(it) } }
         root = null
+        scrollView = null
         content = null
         params = null
+        pendingScrollActionId = null
     }
 
     private fun render() {
         val body = content ?: return
+        val scroll = scrollView
         if (rendering) return
         rendering = true
+        val savedScrollY = scroll?.scrollY ?: 0
         try {
             commitFocusedField()
             renderBody(body)
         } finally {
             rendering = false
         }
+        val scrollToId = pendingScrollActionId
+        pendingScrollActionId = null
+        scroll?.post {
+            if (scrollToId != null) {
+                scrollActionIntoView(scrollToId)
+            } else {
+                scroll.scrollTo(0, savedScrollY)
+            }
+        }
     }
 
     private fun renderBody(body: LinearLayout) {
         body.removeAllViews()
-        body.addView(addButtons())
         body.addView(repeatControls())
 
         if (config.actions.isEmpty()) {
@@ -207,10 +230,12 @@ class FloatingEditorOverlay(
                 body.addView(actionEditor("${index + 1}", index, config.actions.size, action))
             }
         }
+        body.addView(addButtons())
     }
 
     private fun addButtons() = LinearLayout(service).apply {
         orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(8), 0, 0)
         addView(smallButton("全位置を一括指定", true) {
             callbacks.onPickAllCoordinates()
         })
@@ -340,7 +365,7 @@ class FloatingEditorOverlay(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { setMargins(0, dp(2), 0, dp(2)) }
         }
-    }
+    }.also { it.tag = action.id }
 
     private fun breakEditor(
         path: String,
@@ -422,14 +447,7 @@ class FloatingEditorOverlay(
                         }
                 })
             })
-            addView(numberField(
-                "IFへ戻る上限回数（0で無制限）",
-                action.maxTimes.toString(),
-            ) { value ->
-                value.toIntOrNull()?.let {
-                    callbacks.onReplace(action.copy(maxTimes = it.coerceIn(0, MAX_JUMP_TIMES)))
-                }
-            })
+            addView(jumpLimitControls(action))
             addView(numberField(
                 "次の動作までの待機時間 ms",
                 action.waitAfterMs.toString(),
@@ -447,6 +465,55 @@ class FloatingEditorOverlay(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { setMargins(0, dp(2), 0, dp(2)) }
+    }
+
+    private fun jumpLimitControls(action: AutomationAction.JumpTo) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, dp(4))
+        addView(label("戻り回数の制限"))
+        addView(label("超えたらこの番号へを飛ばして次へ進む"))
+        val limited = action.maxTimes > 0
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(smallButton(if (!limited) "制限なし ✓" else "制限なし", true) {
+                callbacks.onReplace(action.copy(maxTimes = 0))
+            })
+            addView(smallButton(if (limited) "制限する ✓" else "制限する", true) {
+                if (!limited) {
+                    callbacks.onReplace(action.copy(maxTimes = 3))
+                }
+            })
+        })
+        if (limited) {
+            addView(numberField("最大回数", action.maxTimes.toString()) { value ->
+                value.toIntOrNull()?.let {
+                    callbacks.onReplace(action.copy(maxTimes = it.coerceIn(1, MAX_JUMP_TIMES)))
+                }
+            })
+            addView(label("カウント方法"))
+            val group = RadioGroup(service).apply {
+                orientation = RadioGroup.VERTICAL
+            }
+            val branchVisit = RadioButton(service).apply {
+                text = "IFに来るたび（同じIFへ番号で戻るときは通算）"
+                setTextColor(Color.WHITE)
+                isChecked = action.limitScope == JumpLimitScope.BRANCH_VISIT
+                setOnClickListener {
+                    callbacks.onReplace(action.copy(limitScope = JumpLimitScope.BRANCH_VISIT))
+                }
+            }
+            val runTotal = RadioButton(service).apply {
+                text = "ループ全体で通算"
+                setTextColor(Color.WHITE)
+                isChecked = action.limitScope == JumpLimitScope.RUN
+                setOnClickListener {
+                    callbacks.onReplace(action.copy(limitScope = JumpLimitScope.RUN))
+                }
+            }
+            group.addView(branchVisit)
+            group.addView(runTotal)
+            addView(group)
+        }
     }
 
     private fun ifEditor(
@@ -711,19 +778,19 @@ class FloatingEditorOverlay(
                     callbacks.onAddToBranch(block.id, side, config.newTap())
                 })
                 addView(smallButton("+スクロール", true) {
-                    callbacks.onAddToBranch(block.id, side, AutomationAction.Swipe())
+                    callbacks.onAddToBranch(block.id, side, config.newSwipe())
                 })
                 addView(smallButton("+IF", true) {
-                    callbacks.onAddToBranch(block.id, side, AutomationAction.IfBlock())
+                    callbacks.onAddToBranch(block.id, side, config.newIf())
                 })
                 addView(smallButton("+終了", true) {
-                    callbacks.onAddToBranch(block.id, side, AutomationAction.BreakLoop())
+                    callbacks.onAddToBranch(block.id, side, config.newBreak())
                 })
                 addView(smallButton("+待機", true) {
-                    callbacks.onAddToBranch(block.id, side, AutomationAction.Wait())
+                    callbacks.onAddToBranch(block.id, side, config.newWait())
                 })
                 addView(smallButton("+番号へ", true) {
-                    callbacks.onAddToBranch(block.id, side, AutomationAction.JumpTo())
+                    callbacks.onAddToBranch(block.id, side, config.newJumpTo())
                 })
             })
         })
@@ -767,10 +834,42 @@ class FloatingEditorOverlay(
         commitFocusedField()
         if (id in expandedDetailIds) {
             expandedDetailIds -= id
+            pendingScrollActionId = null
         } else {
             expandedDetailIds += id
+            pendingScrollActionId = id
         }
-        render()
+        // クリック中の再描画でタッチが別ボタンに当たらないよう遅延
+        content?.post { render() }
+    }
+
+    private fun scrollActionIntoView(actionId: String) {
+        val scroll = scrollView ?: return
+        val body = content ?: return
+        val target = body.findViewWithTag<View>(actionId) ?: return
+        scroll.requestChildRectangleOnScreen(
+            body,
+            android.graphics.Rect(0, target.top, target.width, target.bottom),
+            true,
+        )
+    }
+
+    private fun scrollViewIntoVisible(child: View) {
+        val scroll = scrollView ?: return
+        val body = content ?: return
+        var top = 0
+        var view: View? = child
+        while (view != null && view !== body) {
+            top += view.top
+            view = view.parent as? View
+        }
+        val visibleTop = scroll.scrollY
+        val visibleBottom = visibleTop + scroll.height
+        val childBottom = top + child.height
+        when {
+            top < visibleTop -> scroll.smoothScrollTo(0, top)
+            childBottom > visibleBottom -> scroll.smoothScrollTo(0, childBottom - scroll.height)
+        }
     }
 
     private fun commitFocusedField() {
@@ -851,7 +950,9 @@ class FloatingEditorOverlay(
             }
         }
         setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
+            if (hasFocus) {
+                post { scrollViewIntoVisible(this) }
+            } else {
                 onCommit(text.toString())
             }
         }
@@ -872,8 +973,8 @@ class FloatingEditorOverlay(
         ImageButton(service).apply {
             setImageResource(icon)
             contentDescription = description
-            setBackgroundColor(Color.TRANSPARENT)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = roundedBackground(0xFF3A3745.toInt(), dp(10).toFloat())
+            setPadding(dp(10), dp(10), dp(10), dp(10))
             setOnClickListener {
                 commitFocusedField()
                 onClick()

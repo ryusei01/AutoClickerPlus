@@ -4,6 +4,7 @@ import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.JumpLimitScope
 import com.autoclickerplus.model.RepeatMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -755,6 +756,119 @@ class AutomationRunnerTest {
         advanceUntilIdle()
 
         assertEquals(listOf("start", "next", "after"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun branchVisitLimitStillCountsSelfJumpsToIf() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "start"
+                        point.x < 200f -> "next"
+                        else -> "after"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> false },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(
+                            targetPath = "2",
+                            maxTimes = 2,
+                            limitScope = JumpLimitScope.BRANCH_VISIT,
+                        ),
+                        AutomationAction.Tap(x = 80f, y = 10f, jitterPx = 0),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("start", "next", "after"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun branchVisitLimitResetsWhenIfReachedAgainSequentially() = runTest {
+        val calls = mutableListOf<String>()
+        var checks = 0
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "a"
+                        point.x < 150f -> "retry"
+                        else -> "done"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ ->
+                checks++
+                // 1回目の到達は不成立→戻る、2回目の到達で成立
+                checks >= 3
+            },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    thenActions = listOf(
+                        AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+                    ),
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(
+                            targetPath = "2",
+                            maxTimes = 1,
+                            limitScope = JumpLimitScope.BRANCH_VISIT,
+                        ),
+                        AutomationAction.JumpTo(targetPath = "1"),
+                    ),
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        // 1回目: IFに来て1回だけ同じIFへ戻る → 番号1へ
+        // 2回目: BRANCH_VISITで回数リセット → また1回戻れる → その後成立
+        assertEquals(listOf("a", "a", "done"), calls)
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 

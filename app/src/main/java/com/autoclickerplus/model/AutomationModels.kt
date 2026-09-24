@@ -36,7 +36,7 @@ sealed class AutomationAction {
         val stopAtEnd: Boolean = false,
         val fullScroll: Boolean = false,
         override val enabled: Boolean = true,
-        override val waitAfterMs: Long = 300L,
+        override val waitAfterMs: Long = DEFAULT_SWIPE_WAIT_AFTER_MS,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = DEFAULT_POSITION_JITTER_PX,
     ) : AutomationAction()
@@ -50,7 +50,7 @@ sealed class AutomationAction {
         val thenActions: List<AutomationAction> = emptyList(),
         val elseActions: List<AutomationAction> = emptyList(),
         override val enabled: Boolean = true,
-        override val waitAfterMs: Long = 0L,
+        override val waitAfterMs: Long = DEFAULT_IF_WAIT_AFTER_MS,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
@@ -69,9 +69,9 @@ sealed class AutomationAction {
     @SerialName("wait")
     data class Wait(
         override val id: String = UUID.randomUUID().toString(),
-        val durationMs: Long = 1_000L,
+        val durationMs: Long = DEFAULT_WAIT_DURATION_MS,
         override val enabled: Boolean = true,
-        override val waitAfterMs: Long = 0L,
+        override val waitAfterMs: Long = DEFAULT_WAIT_WAIT_AFTER_MS,
         override val waitJitterMs: Int = DEFAULT_WAIT_JITTER_MS,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
@@ -85,7 +85,7 @@ sealed class AutomationAction {
         val maxTimes: Int = 0,
         val limitScope: JumpLimitScope = JumpLimitScope.RUN,
         override val enabled: Boolean = true,
-        override val waitAfterMs: Long = 0L,
+        override val waitAfterMs: Long = DEFAULT_JUMP_WAIT_AFTER_MS,
         override val waitJitterMs: Int = 0,
         override val jitterPx: Int = 3,
     ) : AutomationAction()
@@ -152,12 +152,29 @@ enum class BranchSide {
     ELSE,
 }
 
+/** 番号へ「戻り回数」のカウント範囲 */
+@Serializable
+enum class JumpLimitScope {
+    /** 外側ループのあいだ通算（同じIFへ番号で戻っても加算） */
+    @SerialName("run")
+    RUN,
+
+    /** IFに順次たどり着くたびにリセット（同じIFへ番号で戻るときは通算のまま） */
+    @SerialName("branch_visit")
+    BRANCH_VISIT,
+}
+
 @Serializable
 data class AutomationConfig(
     val actions: List<AutomationAction> = emptyList(),
     val repeatMode: RepeatMode = RepeatMode.INFINITE,
     val repeatCount: Int = 1,
     val defaultTapWaitAfterMs: Long = DEFAULT_TAP_WAIT_AFTER_MS,
+    val defaultSwipeWaitAfterMs: Long = DEFAULT_SWIPE_WAIT_AFTER_MS,
+    val defaultIfWaitAfterMs: Long = DEFAULT_IF_WAIT_AFTER_MS,
+    val defaultWaitDurationMs: Long = DEFAULT_WAIT_DURATION_MS,
+    val defaultWaitWaitAfterMs: Long = DEFAULT_WAIT_WAIT_AFTER_MS,
+    val defaultJumpWaitAfterMs: Long = DEFAULT_JUMP_WAIT_AFTER_MS,
 )
 
 @Serializable
@@ -246,15 +263,32 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
         jitterPx = 3,
     )
     is AutomationAction.JumpTo -> {
-        val path = targetPath.trim().ifEmpty { targetNumber.coerceAtLeast(1).toString() }
-        copy(
-            targetPath = path,
-            targetNumber = path.toIntOrNull()?.coerceAtLeast(1) ?: targetNumber.coerceAtLeast(1),
-            maxTimes = maxTimes.coerceIn(0, MAX_JUMP_TIMES),
-            waitAfterMs = waitAfterMs.coerceAtLeast(0L),
-            waitJitterMs = waitJitterMs.normalizedWaitJitter(),
-            jitterPx = 3,
-        )
+        val trimmed = targetPath.trim()
+        if (trimmed.isEmpty() && targetNumber <= 0) {
+            copy(
+                targetPath = "",
+                targetNumber = 0,
+                maxTimes = maxTimes.coerceIn(0, MAX_JUMP_TIMES),
+                limitScope = limitScope,
+                waitAfterMs = waitAfterMs.coerceAtLeast(0L),
+                waitJitterMs = waitJitterMs.normalizedWaitJitter(),
+                jitterPx = 3,
+            )
+        } else {
+            val path = trimmed.ifEmpty { targetNumber.coerceAtLeast(1).toString() }
+            copy(
+                targetPath = path,
+                targetNumber = path.substringBefore('-')
+                    .toIntOrNull()
+                    ?.coerceAtLeast(1)
+                    ?: targetNumber.coerceAtLeast(1),
+                maxTimes = maxTimes.coerceIn(0, MAX_JUMP_TIMES),
+                limitScope = limitScope,
+                waitAfterMs = waitAfterMs.coerceAtLeast(0L),
+                waitJitterMs = waitJitterMs.normalizedWaitJitter(),
+                jitterPx = 3,
+            )
+        }
     }
 }
 
@@ -270,6 +304,11 @@ fun AutomationAction.withEnabled(enabled: Boolean): AutomationAction = when (thi
 const val MAX_WAIT_MS = 3_600_000L
 const val MAX_JUMP_TIMES = 10_000
 const val DEFAULT_TAP_WAIT_AFTER_MS = 500L
+const val DEFAULT_SWIPE_WAIT_AFTER_MS = 300L
+const val DEFAULT_IF_WAIT_AFTER_MS = 0L
+const val DEFAULT_WAIT_DURATION_MS = 1_000L
+const val DEFAULT_WAIT_WAIT_AFTER_MS = 0L
+const val DEFAULT_JUMP_WAIT_AFTER_MS = 0L
 const val DEFAULT_WAIT_JITTER_MS = 30
 const val MAX_WAIT_JITTER_MS = 10_000
 const val DEFAULT_POSITION_JITTER_PX = 1
@@ -319,6 +358,11 @@ fun AutomationConfig.normalized(): AutomationConfig = copy(
     actions = actions.map(AutomationAction::normalized),
     repeatCount = repeatCount.coerceIn(1, 100_000),
     defaultTapWaitAfterMs = defaultTapWaitAfterMs.coerceIn(0L, MAX_WAIT_MS),
+    defaultSwipeWaitAfterMs = defaultSwipeWaitAfterMs.coerceIn(0L, MAX_WAIT_MS),
+    defaultIfWaitAfterMs = defaultIfWaitAfterMs.coerceIn(0L, MAX_WAIT_MS),
+    defaultWaitDurationMs = defaultWaitDurationMs.coerceIn(0L, MAX_WAIT_MS),
+    defaultWaitWaitAfterMs = defaultWaitWaitAfterMs.coerceIn(0L, MAX_WAIT_MS),
+    defaultJumpWaitAfterMs = defaultJumpWaitAfterMs.coerceIn(0L, MAX_WAIT_MS),
 )
 
 fun AutomationConfig.newTap(
@@ -329,6 +373,25 @@ fun AutomationConfig.newTap(
     y = y,
     waitAfterMs = defaultTapWaitAfterMs,
 )
+
+fun AutomationConfig.newSwipe(): AutomationAction.Swipe = AutomationAction.Swipe(
+    waitAfterMs = defaultSwipeWaitAfterMs,
+)
+
+fun AutomationConfig.newIf(): AutomationAction.IfBlock = AutomationAction.IfBlock(
+    waitAfterMs = defaultIfWaitAfterMs,
+)
+
+fun AutomationConfig.newWait(): AutomationAction.Wait = AutomationAction.Wait(
+    durationMs = defaultWaitDurationMs,
+    waitAfterMs = defaultWaitWaitAfterMs,
+)
+
+fun AutomationConfig.newJumpTo(): AutomationAction.JumpTo = AutomationAction.JumpTo(
+    waitAfterMs = defaultJumpWaitAfterMs,
+)
+
+fun AutomationConfig.newBreak(): AutomationAction.BreakLoop = AutomationAction.BreakLoop()
 
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
     is AutomationCondition.TextExists -> copy(

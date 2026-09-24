@@ -26,6 +26,68 @@ fun collectActionPaths(
     return result
 }
 
+/** actionId → フロー番号パス（例: 2-E1） */
+fun collectActionIdPaths(
+    actions: List<AutomationAction>,
+    prefix: String = "",
+): Map<String, String> {
+    val result = linkedMapOf<String, String>()
+    actions.forEachIndexed { index, action ->
+        val path = if (prefix.isEmpty()) "${index + 1}" else "$prefix${index + 1}"
+        result[action.id] = path
+        if (action is AutomationAction.IfBlock) {
+            result += collectActionIdPaths(action.thenActions, "$path-T")
+            result += collectActionIdPaths(action.elseActions, "$path-E")
+        }
+    }
+    return result
+}
+
+/**
+ * 削除・並べ替えの前後で、番号へ の移動先を「同じアクション」に向け直す。
+ * 移動先アクション自体が消えていれば未設定にする。
+ */
+fun remapJumpTargets(
+    actions: List<AutomationAction>,
+    pathByIdBefore: Map<String, String>,
+): List<AutomationAction> {
+    val idByPathBefore = pathByIdBefore.entries.associate { (id, path) -> path to id }
+    val pathByIdAfter = collectActionIdPaths(actions)
+
+    fun remap(action: AutomationAction): AutomationAction = when (action) {
+        is AutomationAction.JumpTo -> {
+            val oldPath = action.resolvedTargetPath()
+            if (oldPath.isEmpty()) {
+                action
+            } else {
+                val targetId = idByPathBefore[oldPath]
+                val newPath = targetId?.let { pathByIdAfter[it] }
+                when {
+                    newPath == null && targetId != null -> action.copy(
+                        targetPath = "",
+                        targetNumber = 0,
+                    )
+                    newPath != null && newPath != oldPath -> action.copy(
+                        targetPath = newPath,
+                        targetNumber = newPath.substringBefore('-')
+                            .toIntOrNull()
+                            ?.coerceAtLeast(1)
+                            ?: action.targetNumber,
+                    )
+                    else -> action
+                }
+            }
+        }
+        is AutomationAction.IfBlock -> action.copy(
+            thenActions = action.thenActions.map(::remap),
+            elseActions = action.elseActions.map(::remap),
+        )
+        else -> action
+    }
+
+    return actions.map(::remap)
+}
+
 fun resolveJumpTarget(
     rootActions: List<AutomationAction>,
     targetPath: String,
@@ -66,8 +128,11 @@ fun resolveJumpTarget(
     return null
 }
 
-fun AutomationAction.JumpTo.resolvedTargetPath(): String =
-    targetPath.trim().ifEmpty { targetNumber.toString() }
+fun AutomationAction.JumpTo.resolvedTargetPath(): String {
+    val trimmed = targetPath.trim()
+    if (trimmed.isNotEmpty()) return trimmed
+    return if (targetNumber > 0) targetNumber.toString() else ""
+}
 
 fun jumpTargetLabel(targetPath: String, fromPath: String = ""): String {
     val target = targetPath.trim()

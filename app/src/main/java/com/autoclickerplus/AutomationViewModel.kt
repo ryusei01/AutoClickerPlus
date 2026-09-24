@@ -12,7 +12,12 @@ import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.ScriptLibraryEditor
+import com.autoclickerplus.model.newBreak
+import com.autoclickerplus.model.newIf
+import com.autoclickerplus.model.newJumpTo
+import com.autoclickerplus.model.newSwipe
 import com.autoclickerplus.model.newTap
+import com.autoclickerplus.model.newWait
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -42,21 +47,36 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
 
     fun addTap() = update { AutomationConfigEditor.add(it, it.newTap()) }
 
-    fun addSwipe() = update { AutomationConfigEditor.add(it, AutomationAction.Swipe()) }
+    fun addSwipe() = update { AutomationConfigEditor.add(it, it.newSwipe()) }
 
-    fun addIf() = update { AutomationConfigEditor.add(it, AutomationAction.IfBlock()) }
+    fun addIf() = update { AutomationConfigEditor.add(it, it.newIf()) }
 
-    fun addBreak() = update { AutomationConfigEditor.add(it, AutomationAction.BreakLoop()) }
+    fun addBreak() = update { AutomationConfigEditor.add(it, it.newBreak()) }
 
-    fun addWait() = update { AutomationConfigEditor.add(it, AutomationAction.Wait()) }
+    fun addWait() = update { AutomationConfigEditor.add(it, it.newWait()) }
 
-    fun addJumpTo() = update { AutomationConfigEditor.add(it, AutomationAction.JumpTo()) }
+    fun addJumpTo() = update { AutomationConfigEditor.add(it, it.newJumpTo()) }
 
     fun addToBranch(ifBlockId: String, side: BranchSide, action: AutomationAction) =
         update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, action) }
 
     fun addTapToBranch(ifBlockId: String, side: BranchSide) =
         update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, it.newTap()) }
+
+    fun addSwipeToBranch(ifBlockId: String, side: BranchSide) =
+        update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, it.newSwipe()) }
+
+    fun addIfToBranch(ifBlockId: String, side: BranchSide) =
+        update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, it.newIf()) }
+
+    fun addWaitToBranch(ifBlockId: String, side: BranchSide) =
+        update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, it.newWait()) }
+
+    fun addJumpToBranch(ifBlockId: String, side: BranchSide) =
+        update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, it.newJumpTo()) }
+
+    fun addBreakToBranch(ifBlockId: String, side: BranchSide) =
+        update { AutomationConfigEditor.addToBranch(it, ifBlockId, side, it.newBreak()) }
 
     fun addCondition(ifBlockId: String, condition: AutomationCondition) =
         update { AutomationConfigEditor.addCondition(it, ifBlockId, condition) }
@@ -84,6 +104,21 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setDefaultTapWaitAfterMs(waitMs: Long) =
         update { AutomationConfigEditor.setDefaultTapWaitAfterMs(it, waitMs) }
+
+    fun setDefaultSwipeWaitAfterMs(waitMs: Long) =
+        update { AutomationConfigEditor.setDefaultSwipeWaitAfterMs(it, waitMs) }
+
+    fun setDefaultIfWaitAfterMs(waitMs: Long) =
+        update { AutomationConfigEditor.setDefaultIfWaitAfterMs(it, waitMs) }
+
+    fun setDefaultWaitDurationMs(waitMs: Long) =
+        update { AutomationConfigEditor.setDefaultWaitDurationMs(it, waitMs) }
+
+    fun setDefaultWaitWaitAfterMs(waitMs: Long) =
+        update { AutomationConfigEditor.setDefaultWaitWaitAfterMs(it, waitMs) }
+
+    fun setDefaultJumpWaitAfterMs(waitMs: Long) =
+        update { AutomationConfigEditor.setDefaultJumpWaitAfterMs(it, waitMs) }
 
     fun selectScript(scriptId: String) =
         updateLibrary { ScriptLibraryEditor.select(it, scriptId) }

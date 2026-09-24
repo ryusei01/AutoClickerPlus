@@ -7,12 +7,14 @@ import android.os.Build
 import android.os.SystemClock
 import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.annotation.RequiresApi
 import androidx.core.graphics.get
 import com.autoclickerplus.engine.ConditionEvaluationException
 import com.autoclickerplus.engine.ConditionEvaluator
 import com.autoclickerplus.engine.ConditionLogic
 import com.autoclickerplus.engine.UiNodeSnapshot
+import com.autoclickerplus.engine.mapScreenPointToBitmap
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.ConditionOperator
 import kotlinx.coroutines.delay
@@ -30,10 +32,8 @@ class AccessibilityConditionEvaluator(
     suspend fun sampleColor(x: Int, y: Int): Int {
         val bitmap = captureScreenshot()
         return try {
-            if (x !in 0 until bitmap.width || y !in 0 until bitmap.height) {
-                throw ConditionEvaluationException("色取得の座標が画面外です")
-            }
-            bitmap[x, y]
+            val (bx, by) = mapToBitmap(x, y, bitmap)
+            bitmap[bx, by]
         } finally {
             bitmap.recycle()
         }
@@ -58,13 +58,9 @@ class AccessibilityConditionEvaluator(
                 }
                 is AutomationCondition.PixelColor -> {
                     val bitmap = screenshot ?: captureScreenshot().also { screenshot = it }
-                    if (condition.x !in 0 until bitmap.width ||
-                        condition.y !in 0 until bitmap.height
-                    ) {
-                        throw ConditionEvaluationException("色判定の座標が画面外です")
-                    }
+                    val (bx, by) = mapToBitmap(condition.x, condition.y, bitmap)
                     ConditionLogic.colorsMatch(
-                        bitmap[condition.x, condition.y],
+                        bitmap[bx, by],
                         condition.argb,
                         condition.tolerance,
                     )
@@ -90,16 +86,57 @@ class AccessibilityConditionEvaluator(
         }
     }
 
-    private fun captureNodes(): List<UiNodeSnapshot> {
-        val root = service.rootInActiveWindow
-            ?: throw ConditionEvaluationException("画面の文字情報を取得できません")
-        return try {
-            root.refresh()
-            buildList { collectNodes(root, this, parentIndex = -1) }
-        } finally {
-            @Suppress("DEPRECATION")
-            root.recycle()
+    private fun mapToBitmap(x: Int, y: Int, bitmap: Bitmap): Pair<Int, Int> {
+        val screen = service.overlayScreenBounds()
+        val mapped = mapScreenPointToBitmap(
+            x = x,
+            y = y,
+            screenWidth = screen.width,
+            screenHeight = screen.height,
+            bitmapWidth = bitmap.width,
+            bitmapHeight = bitmap.height,
+        )
+        if (mapped.first !in 0 until bitmap.width || mapped.second !in 0 until bitmap.height) {
+            throw ConditionEvaluationException("色判定の座標が画面外です")
         }
+        return mapped
+    }
+
+    private fun captureNodes(): List<UiNodeSnapshot> {
+        val roots = collectWindowRoots()
+        if (roots.isEmpty()) {
+            throw ConditionEvaluationException("画面の文字情報を取得できません")
+        }
+        return try {
+            buildList {
+                roots.forEach { root ->
+                    root.refresh()
+                    collectNodes(root, this, parentIndex = -1)
+                }
+            }
+        } finally {
+            roots.forEach { root ->
+                @Suppress("DEPRECATION")
+                root.recycle()
+            }
+        }
+    }
+
+    private fun collectWindowRoots(): List<AccessibilityNodeInfo> {
+        val roots = mutableListOf<AccessibilityNodeInfo>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            service.windows
+                ?.asSequence()
+                ?.filter { window ->
+                    window.type == AccessibilityWindowInfo.TYPE_APPLICATION
+                }
+                ?.mapNotNull { it.root }
+                ?.forEach { roots += it }
+        }
+        if (roots.isEmpty()) {
+            service.rootInActiveWindow?.let { roots += it }
+        }
+        return roots
     }
 
     private fun collectNodes(
@@ -123,7 +160,7 @@ class AccessibilityConditionEvaluator(
                         null
                     },
                 ),
-                enabled = nodeIsEnabled(node),
+                enabled = !nodeLooksDisabled(node),
                 clickable = node.isClickable ||
                     node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK },
                 left = bounds.left,
@@ -146,10 +183,22 @@ class AccessibilityConditionEvaluator(
         }
     }
 
-    private fun nodeIsEnabled(node: AccessibilityNodeInfo): Boolean {
-        if (!node.isEnabled) return false
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return true
-        return !ConditionLogic.indicatesDisabledState(node.stateDescription?.toString())
+    private fun nodeLooksDisabled(node: AccessibilityNodeInfo): Boolean {
+        if (!node.isEnabled) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            ConditionLogic.indicatesDisabledState(node.stateDescription?.toString())
+        ) {
+            return true
+        }
+        val viewId = node.viewIdResourceName
+        if (viewId != null &&
+            (viewId.contains("disabled", ignoreCase = true) ||
+                viewId.contains("inactive", ignoreCase = true) ||
+                viewId.contains("非活性"))
+        ) {
+            return true
+        }
+        return false
     }
 
     private suspend fun captureScreenshot(): Bitmap {

@@ -3,6 +3,7 @@ package com.autoclickerplus.engine
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.TextMatchMode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -234,5 +235,26 @@ class ConditionLogicTest {
     fun comparesRgbChannelsUsingTolerance() {
         assertTrue(ConditionLogic.colorsMatch(0xFF102030.toInt(), 0xFF122331.toInt(), 3))
         assertFalse(ConditionLogic.colorsMatch(0xFF102030.toInt(), 0xFF202030.toInt(), 3))
+    }
+
+    @Test
+    fun mapsScreenPointWhenBitmapResolutionDiffers() {
+        val (x, y) = mapScreenPointToBitmap(
+            x = 540,
+            y = 1200,
+            screenWidth = 1080,
+            screenHeight = 2400,
+            bitmapWidth = 540,
+            bitmapHeight = 1200,
+        )
+        assertEquals(270, x)
+        assertEquals(600, y)
+    }
+
+    @Test
+    fun indicatesMoreDisabledMarkers() {
+        assertTrue(ConditionLogic.indicatesDisabledState("button disabled"))
+        assertTrue(ConditionLogic.indicatesDisabledState("非活性"))
+        assertTrue(ConditionLogic.indicatesDisabledState("利用できません"))
     }
 }

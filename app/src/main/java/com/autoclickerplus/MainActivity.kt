@@ -77,6 +77,7 @@ import com.autoclickerplus.model.withEnabled
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.JumpLimitScope
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.ScriptLibrary
@@ -254,7 +255,6 @@ private fun AutomationScreen(
             ScriptSection(library, viewModel, onExport, onImport)
             ServiceSection(serviceConnected, onOpenAccessibility, onShowControls)
             RepeatSection(config, viewModel)
-            DefaultsSection(config, viewModel)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -296,6 +296,7 @@ private fun AutomationScreen(
                     }
                 }
             }
+            DefaultsSection(config, viewModel)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -523,19 +524,69 @@ private fun DefaultsSection(config: AutomationConfig, viewModel: AutomationViewM
     Column(Modifier.padding(top = 10.dp)) {
         Text("デフォルト", style = MaterialTheme.typography.titleMedium)
         Text(
-            "新しく追加するタップの初期値",
+            "新しく追加するアクションの初期値",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 2.dp),
         )
         CommitNumberField(
             value = config.defaultTapWaitAfterMs.toString(),
-            label = "タップの待機時間 ms",
+            label = "タップの次への待機 ms",
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 6.dp),
             onCommit = { value ->
                 value.toLongOrNull()?.let(viewModel::setDefaultTapWaitAfterMs)
+            },
+        )
+        CommitNumberField(
+            value = config.defaultSwipeWaitAfterMs.toString(),
+            label = "スクロールの次への待機 ms",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            onCommit = { value ->
+                value.toLongOrNull()?.let(viewModel::setDefaultSwipeWaitAfterMs)
+            },
+        )
+        CommitNumberField(
+            value = config.defaultIfWaitAfterMs.toString(),
+            label = "IFの次への待機 ms",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            onCommit = { value ->
+                value.toLongOrNull()?.let(viewModel::setDefaultIfWaitAfterMs)
+            },
+        )
+        CommitNumberField(
+            value = config.defaultWaitDurationMs.toString(),
+            label = "待機の待ち時間 ms",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            onCommit = { value ->
+                value.toLongOrNull()?.let(viewModel::setDefaultWaitDurationMs)
+            },
+        )
+        CommitNumberField(
+            value = config.defaultWaitWaitAfterMs.toString(),
+            label = "待機の次への待機 ms",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            onCommit = { value ->
+                value.toLongOrNull()?.let(viewModel::setDefaultWaitWaitAfterMs)
+            },
+        )
+        CommitNumberField(
+            value = config.defaultJumpWaitAfterMs.toString(),
+            label = "番号への次への待機 ms",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            onCommit = { value ->
+                value.toLongOrNull()?.let(viewModel::setDefaultJumpWaitAfterMs)
             },
         )
     }
@@ -1172,19 +1223,19 @@ private fun BranchEditor(
                 viewModel.addTapToBranch(blockId, side)
             }) { Text("+タップ") }
             TextButton(onClick = {
-                viewModel.addToBranch(blockId, side, AutomationAction.Swipe())
+                viewModel.addSwipeToBranch(blockId, side)
             }) { Text("+スクロール") }
             TextButton(onClick = {
-                viewModel.addToBranch(blockId, side, AutomationAction.IfBlock())
+                viewModel.addIfToBranch(blockId, side)
             }) { Text("+IF") }
             TextButton(onClick = {
-                viewModel.addToBranch(blockId, side, AutomationAction.BreakLoop())
+                viewModel.addBreakToBranch(blockId, side)
             }) { Text("+終了") }
             TextButton(onClick = {
-                viewModel.addToBranch(blockId, side, AutomationAction.Wait())
+                viewModel.addWaitToBranch(blockId, side)
             }) { Text("+待機") }
             TextButton(onClick = {
-                viewModel.addToBranch(blockId, side, AutomationAction.JumpTo())
+                viewModel.addJumpToBranch(blockId, side)
             }) { Text("+番号へ") }
         }
     }
@@ -1328,18 +1379,7 @@ private fun JumpToCard(
                         }) { Text(targetPath) }
                     }
                 }
-                CommitNumberField(
-                    value = action.maxTimes.toString(),
-                    label = "IFへ戻る上限回数（0で無制限）",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    onCommit = { value ->
-                        value.toIntOrNull()?.let {
-                            onReplace(action.copy(maxTimes = it.coerceIn(0, MAX_JUMP_TIMES)))
-                        }
-                    },
-                )
+                JumpLimitEditor(action = action, onReplace = onReplace)
                 WaitWithJitterFields(
                     waitMs = action.waitAfterMs,
                     jitterMs = action.waitJitterMs,
@@ -1348,6 +1388,100 @@ private fun JumpToCard(
                     onJitter = { onReplace(action.withWaitJitter(it)) },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun JumpLimitEditor(
+    action: AutomationAction.JumpTo,
+    onReplace: (AutomationAction) -> Unit,
+) {
+    val limited = action.maxTimes > 0
+    Column(Modifier.padding(top = 8.dp)) {
+        Text("戻り回数の制限", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "同じ番号へ何度も戻るときの上限。超えたらこの番号へを飛ばして次へ進む",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = {
+                    onReplace(action.copy(maxTimes = 0))
+                },
+            ) { Text(if (!limited) "制限なし ✓" else "制限なし") }
+            TextButton(
+                onClick = {
+                    if (!limited) {
+                        onReplace(action.copy(maxTimes = 3))
+                    }
+                },
+            ) { Text(if (limited) "制限する ✓" else "制限する") }
+        }
+        if (limited) {
+            CommitNumberField(
+                value = action.maxTimes.toString(),
+                label = "最大回数",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let {
+                        onReplace(action.copy(maxTimes = it.coerceIn(1, MAX_JUMP_TIMES)))
+                    }
+                },
+            )
+            Text(
+                "カウント方法",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                    selected = action.limitScope == JumpLimitScope.BRANCH_VISIT,
+                    onClick = {
+                        onReplace(action.copy(limitScope = JumpLimitScope.BRANCH_VISIT))
+                    },
+                )
+                Text(
+                    "IFに来るたび",
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            onReplace(action.copy(limitScope = JumpLimitScope.BRANCH_VISIT))
+                        },
+                )
+            }
+            Text(
+                "順にIFへ到達するたび回数をリセット。同じIFへ番号で戻るときは通算",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                    selected = action.limitScope == JumpLimitScope.RUN,
+                    onClick = {
+                        onReplace(action.copy(limitScope = JumpLimitScope.RUN))
+                    },
+                )
+                Text(
+                    "ループ全体で通算",
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            onReplace(action.copy(limitScope = JumpLimitScope.RUN))
+                        },
+                )
+            }
+            Text(
+                "外側の繰り返しが終わるまで回数を足し続ける",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp),
+            )
         }
     }
 }

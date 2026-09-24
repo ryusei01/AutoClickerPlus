@@ -44,8 +44,9 @@ object ConditionLogic {
 
     fun indicatesDisabledState(stateDescription: String?): Boolean {
         if (stateDescription.isNullOrBlank()) return false
+        val normalized = stateDescription.replace('\n', ' ').trim()
         return DISABLED_STATE_MARKERS.any { marker ->
-            stateDescription.contains(marker, ignoreCase = true)
+            normalized.contains(marker, ignoreCase = true)
         }
     }
 
@@ -54,7 +55,16 @@ object ConditionLogic {
             abs(channel(actual, 8) - channel(expected, 8)) <= tolerance &&
             abs(channel(actual, 0) - channel(expected, 0)) <= tolerance
 
+    /**
+     * Chrome などは文字ノードとクリック可能ノードが別で、
+     * 活性はクリック可能側（または祖先）に付くことが多い。
+     */
     private fun effectiveEnabled(nodes: List<UiNodeSnapshot>, start: Int): Boolean {
+        val interactive = nearestClickableIndex(nodes, start) ?: start
+        return enabledAlongPath(nodes, start) && nodes[interactive].enabled
+    }
+
+    private fun enabledAlongPath(nodes: List<UiNodeSnapshot>, start: Int): Boolean {
         var index = start
         val seen = HashSet<Int>()
         while (index in nodes.indices && seen.add(index)) {
@@ -62,6 +72,16 @@ object ConditionLogic {
             index = nodes[index].parentIndex
         }
         return true
+    }
+
+    private fun nearestClickableIndex(nodes: List<UiNodeSnapshot>, start: Int): Int? {
+        var index = start
+        val seen = HashSet<Int>()
+        while (index in nodes.indices && seen.add(index)) {
+            if (nodes[index].clickable) return index
+            index = nodes[index].parentIndex
+        }
+        return null
     }
 
     private fun effectiveClickable(
@@ -93,14 +113,29 @@ object ConditionLogic {
     }
 
     private fun matches(value: String, query: String, mode: TextMatchMode): Boolean {
-        if (query.isBlank()) return false
+        val trimmedValue = value.trim()
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.isBlank()) return false
         return when (mode) {
-            TextMatchMode.EXACT -> value.equals(query, ignoreCase = true)
-            TextMatchMode.CONTAINS -> value.contains(query, ignoreCase = true)
+            TextMatchMode.EXACT -> trimmedValue.equals(trimmedQuery, ignoreCase = true)
+            TextMatchMode.CONTAINS -> trimmedValue.contains(trimmedQuery, ignoreCase = true)
         }
     }
 
     private fun channel(color: Int, shift: Int): Int = color shr shift and 0xFF
 
-    private val DISABLED_STATE_MARKERS = listOf("disabled", "無効", "使用不可")
+    private val DISABLED_STATE_MARKERS = listOf(
+        "disabled",
+        "dimmed",
+        "unavailable",
+        "not enabled",
+        "not available",
+        "aria-disabled",
+        "無効",
+        "非活性",
+        "使用不可",
+        "利用できません",
+        "選択できません",
+        "押せません",
+    )
 }
