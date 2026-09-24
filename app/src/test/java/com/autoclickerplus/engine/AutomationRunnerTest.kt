@@ -759,6 +759,50 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun exhaustedJumpLeavesIfWithoutRunningRemainingBranchActions() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += if (point.x < 200f) "branch" else "after"
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> false },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    elseActions = listOf(
+                        AutomationAction.Tap(x = 100f, y = 10f, jitterPx = 0),
+                        AutomationAction.JumpTo(targetPath = "1", maxTimes = 2),
+                        AutomationAction.JumpTo(targetPath = "1"),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("branch", "branch", "branch", "after"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun jumpToBranchPathExecutesNestedAction() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(

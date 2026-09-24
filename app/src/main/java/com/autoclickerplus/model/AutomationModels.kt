@@ -93,6 +93,7 @@ sealed class AutomationCondition {
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -103,6 +104,7 @@ sealed class AutomationCondition {
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
         val expectedEnabled: Boolean? = true,
         val expectedClickable: Boolean? = null,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -114,6 +116,25 @@ sealed class AutomationCondition {
         val argb: Int = 0xFFFFFFFF.toInt(),
         val tolerance: Int = 20,
     ) : AutomationCondition()
+}
+
+@Serializable
+data class ScreenRegion(
+    val left: Int = 0,
+    val top: Int = 0,
+    val right: Int = 1080,
+    val bottom: Int = 2400,
+) {
+    fun normalized(): ScreenRegion {
+        val normalizedLeft = minOf(left, right).coerceAtLeast(0)
+        val normalizedTop = minOf(top, bottom).coerceAtLeast(0)
+        return copy(
+            left = normalizedLeft,
+            top = normalizedTop,
+            right = maxOf(left, right).coerceAtLeast(normalizedLeft),
+            bottom = maxOf(top, bottom).coerceAtLeast(normalizedTop),
+        )
+    }
 }
 
 @Serializable
@@ -256,8 +277,14 @@ fun AutomationConfig.normalized(): AutomationConfig = copy(
 )
 
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
-    is AutomationCondition.TextExists -> copy(query = query.take(200))
-    is AutomationCondition.UiState -> copy(query = query.take(200))
+    is AutomationCondition.TextExists -> copy(
+        query = query.take(200),
+        region = region?.normalized(),
+    )
+    is AutomationCondition.UiState -> copy(
+        query = query.take(200),
+        region = region?.normalized(),
+    )
     is AutomationCondition.PixelColor -> copy(
         x = x.coerceAtLeast(0),
         y = y.coerceAtLeast(0),

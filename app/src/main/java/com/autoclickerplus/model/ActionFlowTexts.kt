@@ -34,9 +34,12 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
 
 fun AutomationCondition.summary(): String = when (this) {
     is AutomationCondition.TextExists ->
-        "文字「${query.ifBlank { "未設定" }}」"
+        "文字「${query.ifBlank { "未設定" }}」${region.summarySuffix()}"
     is AutomationCondition.UiState ->
-        "活性「${query.ifBlank { "未設定" }}」"
+        "活性「${query.ifBlank { "未設定" }}」${region.summarySuffix()}"
     is AutomationCondition.PixelColor ->
         "色(${x}, ${y})"
 }
+
+private fun ScreenRegion?.summarySuffix(): String =
+    if (this == null) "" else " 区域($left,$top)-($right,$bottom)"

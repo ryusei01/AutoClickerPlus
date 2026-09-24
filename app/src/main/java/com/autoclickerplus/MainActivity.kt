@@ -57,6 +57,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.text.input.ImeAction
@@ -77,6 +79,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.service.AutoClickAccessibilityService
@@ -914,6 +917,10 @@ private fun ConditionEditor(
                 TextButton(onClick = {
                     onReplace(condition.copy(matchMode = condition.matchMode.toggled()))
                 }) { Text("一致方法: ${condition.matchMode.label}") }
+                RegionEditor(
+                    region = condition.region,
+                    onChange = { onReplace(condition.copy(region = it)) },
+                )
             }
             is AutomationCondition.UiState -> {
                 CommitTextField(
@@ -937,6 +944,10 @@ private fun ConditionEditor(
                         ))
                     }) { Text("clickable: ${condition.expectedClickable.expectedLabel}") }
                 }
+                RegionEditor(
+                    region = condition.region,
+                    onChange = { onReplace(condition.copy(region = it)) },
+                )
             }
             is AutomationCondition.PixelColor -> {
                 OutlinedButton(onClick = onPickColor) {
@@ -983,6 +994,67 @@ private fun ConditionEditor(
             }
         }
     }
+}
+
+@Composable
+private fun RegionEditor(
+    region: ScreenRegion?,
+    onChange: (ScreenRegion?) -> Unit,
+) {
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    TextButton(onClick = {
+        onChange(
+            if (region == null) {
+                ScreenRegion(
+                    right = with(density) { configuration.screenWidthDp.dp.roundToPx() },
+                    bottom = with(density) { configuration.screenHeightDp.dp.roundToPx() },
+                )
+            } else {
+                null
+            },
+        )
+    }) {
+        Text(if (region == null) "判定区域を指定" else "判定区域を解除")
+    }
+    if (region == null) return
+
+    Text(
+        "文字要素の中心がこの区域内にある場合だけ一致",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        RegionNumberField("左X", region.left, Modifier.weight(1f)) {
+            onChange(region.copy(left = it))
+        }
+        RegionNumberField("上Y", region.top, Modifier.weight(1f)) {
+            onChange(region.copy(top = it))
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        RegionNumberField("右X", region.right, Modifier.weight(1f)) {
+            onChange(region.copy(right = it))
+        }
+        RegionNumberField("下Y", region.bottom, Modifier.weight(1f)) {
+            onChange(region.copy(bottom = it))
+        }
+    }
+}
+
+@Composable
+private fun RegionNumberField(
+    label: String,
+    value: Int,
+    modifier: Modifier,
+    onChange: (Int) -> Unit,
+) {
+    CommitNumberField(
+        value = value.toString(),
+        label = label,
+        modifier = modifier,
+        onCommit = { input -> input.toIntOrNull()?.let(onChange) },
+    )
 }
 
 @Composable

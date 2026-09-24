@@ -29,6 +29,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
@@ -578,6 +579,9 @@ class FloatingEditorOverlay(
                         condition.copy(matchMode = condition.matchMode.toggled()),
                     )
                 })
+                addView(regionEditor(condition.region) {
+                    callbacks.onReplaceCondition(blockId, condition.copy(region = it))
+                })
             }
             is AutomationCondition.UiState -> {
                 addView(textField("対象文字", condition.query) {
@@ -608,6 +612,9 @@ class FloatingEditorOverlay(
                         )
                     })
                 })
+                addView(regionEditor(condition.region) {
+                    callbacks.onReplaceCondition(blockId, condition.copy(region = it))
+                })
             }
             is AutomationCondition.PixelColor -> {
                 addView(label(
@@ -626,6 +633,47 @@ class FloatingEditorOverlay(
                     }
                 })
             }
+        }
+    }
+
+    private fun regionEditor(
+        region: ScreenRegion?,
+        onChange: (ScreenRegion?) -> Unit,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(smallButton(
+            if (region == null) "判定区域を指定" else "判定区域を解除",
+            true,
+        ) {
+            onChange(
+                if (region == null) {
+                    val metrics = service.resources.displayMetrics
+                    ScreenRegion(right = metrics.widthPixels, bottom = metrics.heightPixels)
+                } else {
+                    null
+                },
+            )
+        })
+        if (region != null) {
+            addView(label("文字要素の中心が区域内にある場合だけ一致"))
+            addView(LinearLayout(service).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(numberField("左X", region.left.toString()) {
+                    it.toIntOrNull()?.let { value -> onChange(region.copy(left = value)) }
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(numberField("上Y", region.top.toString()) {
+                    it.toIntOrNull()?.let { value -> onChange(region.copy(top = value)) }
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            })
+            addView(LinearLayout(service).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(numberField("右X", region.right.toString()) {
+                    it.toIntOrNull()?.let { value -> onChange(region.copy(right = value)) }
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(numberField("下Y", region.bottom.toString()) {
+                    it.toIntOrNull()?.let { value -> onChange(region.copy(bottom = value)) }
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            })
         }
     }
 

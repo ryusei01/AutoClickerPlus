@@ -1,6 +1,7 @@
 package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationCondition
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.TextMatchMode
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -60,6 +61,47 @@ class ConditionLogicTest {
                 AutomationCondition.UiState(
                     query = "準備中",
                     expectedEnabled = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun distinguishesIdenticalTextByScreenRegion() {
+        val duplicateNodes = listOf(
+            UiNodeSnapshot(
+                values = listOf("発売中"),
+                enabled = true,
+                clickable = true,
+                bounds = UiBounds(20, 100, 220, 180),
+            ),
+            UiNodeSnapshot(
+                values = listOf("発売中"),
+                enabled = false,
+                clickable = false,
+                bounds = UiBounds(20, 700, 220, 780),
+            ),
+        )
+
+        assertTrue(
+            ConditionLogic.uiStateMatches(
+                duplicateNodes,
+                AutomationCondition.UiState(
+                    query = "発売中",
+                    expectedEnabled = true,
+                    expectedClickable = true,
+                    region = ScreenRegion(0, 0, 300, 300),
+                ),
+            ),
+        )
+        assertFalse(
+            ConditionLogic.uiStateMatches(
+                duplicateNodes,
+                AutomationCondition.UiState(
+                    query = "発売中",
+                    expectedEnabled = true,
+                    expectedClickable = true,
+                    region = ScreenRegion(0, 600, 300, 900),
                 ),
             ),
         )
