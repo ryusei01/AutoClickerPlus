@@ -307,6 +307,7 @@ class AutomationRunner(
                 if (action.maxTimes > 0) {
                     val used = jumpUseCounts[action.id] ?: 0
                     if (used >= action.maxTimes) {
+                        jumpUseCounts.remove(action.id)
                         return BranchOutcome.Continue
                     }
                     jumpUseCounts[action.id] = used + 1

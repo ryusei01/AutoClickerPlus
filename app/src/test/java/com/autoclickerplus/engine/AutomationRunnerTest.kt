@@ -844,6 +844,113 @@ class AutomationRunnerTest {
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 
+    @Test
+    fun jumpMaxTimesInElseBranchAdvancesToNextBranchAction() = runTest {
+        val calls = mutableListOf<String>()
+        var evalCount = 0
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "before"
+                        point.x < 200f -> "after_jump"
+                        else -> "root_after"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ ->
+                evalCount++
+                false
+            },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(targetNumber = 1, maxTimes = 2),
+                        AutomationAction.Tap(x = 100f, y = 10f, jitterPx = 0),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("before", "before", "before", "after_jump", "root_after"),
+            calls,
+        )
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun jumpMaxTimesResetsAfterExhaustion() = runTest {
+        val calls = mutableListOf<String>()
+        var evalCount = 0
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += when {
+                        point.x < 50f -> "start"
+                        else -> "end"
+                    }
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ ->
+                evalCount++
+                evalCount >= 7
+            },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.IfBlock(
+                    elseActions = listOf(
+                        AutomationAction.JumpTo(targetNumber = 2, maxTimes = 2),
+                        AutomationAction.JumpTo(targetNumber = 1),
+                    ),
+                ),
+                AutomationAction.Tap(x = 400f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("start", "start", "start", "end"), calls)
+        assertEquals(7, evalCount)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
     private fun recordingExecutor(calls: MutableList<String>) = object : GestureExecutor {
         override suspend fun tap(point: GesturePoint): Boolean {
             calls += if (point.x < 50f) "then" else "else"
