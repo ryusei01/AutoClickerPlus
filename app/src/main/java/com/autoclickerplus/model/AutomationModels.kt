@@ -93,6 +93,10 @@ sealed class AutomationCondition {
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val regionLeft: Int? = null,
+        val regionTop: Int? = null,
+        val regionRight: Int? = null,
+        val regionBottom: Int? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -103,6 +107,10 @@ sealed class AutomationCondition {
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
         val expectedEnabled: Boolean? = true,
         val expectedClickable: Boolean? = null,
+        val regionLeft: Int? = null,
+        val regionTop: Int? = null,
+        val regionRight: Int? = null,
+        val regionBottom: Int? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -256,8 +264,20 @@ fun AutomationConfig.normalized(): AutomationConfig = copy(
 )
 
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
-    is AutomationCondition.TextExists -> copy(query = query.take(200))
-    is AutomationCondition.UiState -> copy(query = query.take(200))
+    is AutomationCondition.TextExists -> copy(
+        query = query.take(200),
+        regionLeft = regionLeft?.coerceAtLeast(0),
+        regionTop = regionTop?.coerceAtLeast(0),
+        regionRight = regionRight?.coerceAtLeast(0),
+        regionBottom = regionBottom?.coerceAtLeast(0),
+    )
+    is AutomationCondition.UiState -> copy(
+        query = query.take(200),
+        regionLeft = regionLeft?.coerceAtLeast(0),
+        regionTop = regionTop?.coerceAtLeast(0),
+        regionRight = regionRight?.coerceAtLeast(0),
+        regionBottom = regionBottom?.coerceAtLeast(0),
+    )
     is AutomationCondition.PixelColor -> copy(
         x = x.coerceAtLeast(0),
         y = y.coerceAtLeast(0),
