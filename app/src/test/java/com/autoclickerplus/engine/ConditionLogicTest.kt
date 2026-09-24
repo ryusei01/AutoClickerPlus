@@ -120,6 +120,117 @@ class ConditionLogicTest {
     }
 
     @Test
+    fun chromeChildTextUsesDisabledClickableParent() {
+        val nodes = listOf(
+            UiNodeSnapshot(
+                values = listOf("購入する"),
+                enabled = false,
+                clickable = true,
+                visible = true,
+            ),
+            UiNodeSnapshot(
+                values = listOf("購入する"),
+                enabled = true,
+                clickable = false,
+                visible = true,
+                parentIndex = 0,
+            ),
+        )
+
+        assertFalse(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(query = "購入する", expectedEnabled = true),
+            ),
+        )
+        assertTrue(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(query = "購入する", expectedEnabled = false),
+            ),
+        )
+        assertTrue(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(
+                    query = "購入する",
+                    expectedEnabled = null,
+                    expectedClickable = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun clickableDoesNotLeakFromAncestorWithDifferentText() {
+        val nodes = listOf(
+            UiNodeSnapshot(
+                values = listOf("商品カード"),
+                enabled = true,
+                clickable = true,
+            ),
+            UiNodeSnapshot(
+                values = listOf("説明"),
+                enabled = true,
+                clickable = false,
+                parentIndex = 0,
+            ),
+            UiNodeSnapshot(
+                values = emptyList(),
+                enabled = true,
+                clickable = true,
+            ),
+            UiNodeSnapshot(
+                values = listOf("購入する"),
+                enabled = true,
+                clickable = false,
+                parentIndex = 2,
+            ),
+        )
+
+        assertFalse(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(
+                    query = "説明",
+                    expectedEnabled = null,
+                    expectedClickable = true,
+                ),
+            ),
+        )
+        assertTrue(
+            ConditionLogic.uiStateMatches(
+                nodes,
+                AutomationCondition.UiState(
+                    query = "購入する",
+                    expectedEnabled = null,
+                    expectedClickable = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun hiddenTextDoesNotMatch() {
+        assertFalse(
+            ConditionLogic.textExists(
+                listOf(
+                    UiNodeSnapshot(
+                        values = listOf("発売中"),
+                        enabled = true,
+                        clickable = false,
+                        visible = false,
+                    ),
+                ),
+                AutomationCondition.TextExists(query = "発売中"),
+            ),
+        )
+        assertFalse(ConditionLogic.indicatesDisabledState(null))
+        assertTrue(ConditionLogic.indicatesDisabledState("無効"))
+        assertFalse(ConditionLogic.indicatesDisabledState("オン"))
+    }
+
+    @Test
     fun comparesRgbChannelsUsingTolerance() {
         assertTrue(ConditionLogic.colorsMatch(0xFF102030.toInt(), 0xFF122331.toInt(), 3))
         assertFalse(ConditionLogic.colorsMatch(0xFF102030.toInt(), 0xFF202030.toInt(), 3))
