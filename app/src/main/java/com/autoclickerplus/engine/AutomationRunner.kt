@@ -228,6 +228,7 @@ class AutomationRunner(
                         allowJump = false,
                         startIndex = target.index,
                     )
+                    var resolvedToRoot = false
                     while (nestedOutcome is BranchOutcome.Jump) {
                         val next = resolveJumpTarget(rootActions, nestedOutcome.targetPath) ?: break
                         jumps++
@@ -237,6 +238,7 @@ class AutomationRunner(
                         nestedOutcome = if (next.actions === rootActions) {
                             currentActions = rootActions
                             index = next.index
+                            resolvedToRoot = true
                             BranchOutcome.Continue
                         } else {
                             executeActions(
@@ -251,8 +253,10 @@ class AutomationRunner(
                     if (nestedOutcome is BranchOutcome.Jump) {
                         return nestedOutcome
                     }
-                    currentActions = rootActions
-                    index = target.rootIndexAfter
+                    if (!resolvedToRoot) {
+                        currentActions = rootActions
+                        index = target.rootIndexAfter
+                    }
                 }
             }
         }

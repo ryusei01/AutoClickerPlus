@@ -11,6 +11,7 @@ import androidx.core.graphics.get
 import com.autoclickerplus.engine.ConditionEvaluationException
 import com.autoclickerplus.engine.ConditionEvaluator
 import com.autoclickerplus.engine.ConditionLogic
+import com.autoclickerplus.engine.NodeBounds
 import com.autoclickerplus.engine.UiNodeSnapshot
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.ConditionOperator
@@ -43,16 +44,20 @@ class AccessibilityConditionEvaluator(
         operator: ConditionOperator,
     ): Boolean {
         if (conditions.isEmpty()) return true
+        val needsBounds = conditions.any { cond ->
+            (cond is AutomationCondition.TextExists && cond.region != null) ||
+                (cond is AutomationCondition.UiState && cond.region != null)
+        }
         var nodeSnapshots: List<UiNodeSnapshot>? = null
         var screenshot: Bitmap? = null
         try {
             suspend fun evaluateOne(condition: AutomationCondition): Boolean = when (condition) {
                 is AutomationCondition.TextExists -> {
-                    val nodes = nodeSnapshots ?: captureNodes().also { nodeSnapshots = it }
+                    val nodes = nodeSnapshots ?: captureNodes(needsBounds).also { nodeSnapshots = it }
                     ConditionLogic.textExists(nodes, condition)
                 }
                 is AutomationCondition.UiState -> {
-                    val nodes = nodeSnapshots ?: captureNodes().also { nodeSnapshots = it }
+                    val nodes = nodeSnapshots ?: captureNodes(needsBounds).also { nodeSnapshots = it }
                     ConditionLogic.uiStateMatches(nodes, condition)
                 }
                 is AutomationCondition.PixelColor -> {
@@ -89,11 +94,11 @@ class AccessibilityConditionEvaluator(
         }
     }
 
-    private fun captureNodes(): List<UiNodeSnapshot> {
+    private fun captureNodes(collectBounds: Boolean = false): List<UiNodeSnapshot> {
         val root = service.rootInActiveWindow
             ?: throw ConditionEvaluationException("画面の文字情報を取得できません")
         return try {
-            buildList { collectNodes(root, this) }
+            buildList { collectNodes(root, this, collectBounds) }
         } finally {
             @Suppress("DEPRECATION")
             root.recycle()
@@ -103,8 +108,15 @@ class AccessibilityConditionEvaluator(
     private fun collectNodes(
         node: AccessibilityNodeInfo,
         destination: MutableList<UiNodeSnapshot>,
+        collectBounds: Boolean,
     ) {
         if (node.isVisibleToUser && node.packageName != service.packageName) {
+            val bounds = if (collectBounds) {
+                android.graphics.Rect().also { node.getBoundsInScreen(it) }
+                    .let { NodeBounds(it.left, it.top, it.right, it.bottom) }
+            } else {
+                null
+            }
             destination += UiNodeSnapshot(
                 values = listOfNotNull(
                     node.text?.toString(),
@@ -117,12 +129,13 @@ class AccessibilityConditionEvaluator(
                 ),
                 enabled = node.isEnabled,
                 clickable = node.isClickable,
+                bounds = bounds,
             )
         }
         for (index in 0 until node.childCount) {
             val child = node.getChild(index) ?: continue
             try {
-                collectNodes(child, destination)
+                collectNodes(child, destination, collectBounds)
             } finally {
                 @Suppress("DEPRECATION")
                 child.recycle()

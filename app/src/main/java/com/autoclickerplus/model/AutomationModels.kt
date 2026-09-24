@@ -84,6 +84,20 @@ sealed class AutomationAction {
 }
 
 @Serializable
+data class ScreenRegion(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
+) {
+    fun contains(nodeLeft: Int, nodeTop: Int, nodeRight: Int, nodeBottom: Int): Boolean =
+        nodeLeft >= left && nodeTop >= top && nodeRight <= right && nodeBottom <= bottom
+
+    fun overlaps(nodeLeft: Int, nodeTop: Int, nodeRight: Int, nodeBottom: Int): Boolean =
+        nodeLeft < right && nodeRight > left && nodeTop < bottom && nodeBottom > top
+}
+
+@Serializable
 sealed class AutomationCondition {
     abstract val id: String
 
@@ -93,6 +107,7 @@ sealed class AutomationCondition {
         override val id: String = UUID.randomUUID().toString(),
         val query: String = "",
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -103,6 +118,7 @@ sealed class AutomationCondition {
         val matchMode: TextMatchMode = TextMatchMode.CONTAINS,
         val expectedEnabled: Boolean? = true,
         val expectedClickable: Boolean? = null,
+        val region: ScreenRegion? = null,
     ) : AutomationCondition()
 
     @Serializable
@@ -250,14 +266,22 @@ fun Int.normalizedWaitJitter(): Int = coerceIn(0, MAX_WAIT_JITTER_MS)
 
 fun Int.normalizedPositionJitter(): Int = coerceIn(0, MAX_POSITION_JITTER_PX)
 
+fun ScreenRegion.normalized(): ScreenRegion? {
+    val l = left.coerceAtLeast(0)
+    val t = top.coerceAtLeast(0)
+    val r = right.coerceAtLeast(0)
+    val b = bottom.coerceAtLeast(0)
+    return if (l >= r || t >= b) null else copy(left = l, top = t, right = r, bottom = b)
+}
+
 fun AutomationConfig.normalized(): AutomationConfig = copy(
     actions = actions.map(AutomationAction::normalized),
     repeatCount = repeatCount.coerceIn(1, 100_000),
 )
 
 fun AutomationCondition.normalized(): AutomationCondition = when (this) {
-    is AutomationCondition.TextExists -> copy(query = query.take(200))
-    is AutomationCondition.UiState -> copy(query = query.take(200))
+    is AutomationCondition.TextExists -> copy(query = query.take(200), region = region?.normalized())
+    is AutomationCondition.UiState -> copy(query = query.take(200), region = region?.normalized())
     is AutomationCondition.PixelColor -> copy(
         x = x.coerceAtLeast(0),
         y = y.coerceAtLeast(0),

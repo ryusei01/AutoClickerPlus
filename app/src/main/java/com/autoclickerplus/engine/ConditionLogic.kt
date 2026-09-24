@@ -1,13 +1,17 @@
 package com.autoclickerplus.engine
 
 import com.autoclickerplus.model.AutomationCondition
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.TextMatchMode
 import kotlin.math.abs
+
+data class NodeBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
 
 data class UiNodeSnapshot(
     val values: List<String>,
     val enabled: Boolean,
     val clickable: Boolean,
+    val bounds: NodeBounds? = null,
 )
 
 object ConditionLogic {
@@ -15,18 +19,26 @@ object ConditionLogic {
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.TextExists,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) }
+        inRegion(node.bounds, condition.region) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) }
     }
 
     fun uiStateMatches(
         nodes: List<UiNodeSnapshot>,
         condition: AutomationCondition.UiState,
     ): Boolean = nodes.any { node ->
-        node.values.any { matches(it, condition.query, condition.matchMode) } &&
+        inRegion(node.bounds, condition.region) &&
+            node.values.any { matches(it, condition.query, condition.matchMode) } &&
             (condition.expectedEnabled == null ||
                 node.enabled == condition.expectedEnabled) &&
             (condition.expectedClickable == null ||
                 node.clickable == condition.expectedClickable)
+    }
+
+    private fun inRegion(bounds: NodeBounds?, region: ScreenRegion?): Boolean {
+        if (region == null) return true
+        if (bounds == null) return false
+        return region.overlaps(bounds.left, bounds.top, bounds.right, bounds.bottom)
     }
 
     fun colorsMatch(actual: Int, expected: Int, tolerance: Int): Boolean =

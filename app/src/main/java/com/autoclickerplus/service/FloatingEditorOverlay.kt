@@ -29,6 +29,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.RepeatMode
+import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.flowSummary
 import com.autoclickerplus.model.flowTitle
@@ -578,6 +579,9 @@ class FloatingEditorOverlay(
                         condition.copy(matchMode = condition.matchMode.toggled()),
                     )
                 })
+                addView(regionEditor(condition.region) { region ->
+                    callbacks.onReplaceCondition(blockId, condition.copy(region = region))
+                })
             }
             is AutomationCondition.UiState -> {
                 addView(textField("対象文字", condition.query) {
@@ -607,6 +611,9 @@ class FloatingEditorOverlay(
                             ),
                         )
                     })
+                })
+                addView(regionEditor(condition.region) { region ->
+                    callbacks.onReplaceCondition(blockId, condition.copy(region = region))
                 })
             }
             is AutomationCondition.PixelColor -> {
@@ -731,6 +738,75 @@ class FloatingEditorOverlay(
         setTextColor(0xFFB8C0D0.toInt())
         setPadding(0, dp(2), 0, dp(2))
     }
+
+    private fun regionEditor(
+        region: ScreenRegion?,
+        onRegionChange: (ScreenRegion?) -> Unit,
+    ) = LinearLayout(service).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(LinearLayout(service).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label(if (region != null) "区域: ON" else "区域: OFF").apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f)
+            })
+            addView(smallButton(if (region != null) "区域解除" else "区域指定", true) {
+                onRegionChange(if (region != null) null else ScreenRegion(0, 0, 540, 1200))
+            })
+        })
+        if (region != null) {
+            addView(label("左・上・右・下 (px)"))
+            addView(LinearLayout(service).apply {
+                orientation = LinearLayout.HORIZONTAL
+                val fields = listOf(
+                    "左" to region.left.toString(),
+                    "上" to region.top.toString(),
+                    "右" to region.right.toString(),
+                    "下" to region.bottom.toString(),
+                )
+                fields.forEachIndexed { i, (hint, v) ->
+                    addView(
+                        regionCoordField(hint, v) { parsed ->
+                            val updated = when (i) {
+                                0 -> region.copy(left = parsed)
+                                1 -> region.copy(top = parsed)
+                                2 -> region.copy(right = parsed)
+                                else -> region.copy(bottom = parsed)
+                            }
+                            onRegionChange(updated)
+                        },
+                        LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                            setMargins(dp(2), 0, dp(2), 0)
+                        },
+                    )
+                }
+            })
+        }
+    }
+
+    private fun regionCoordField(hintText: String, value: String, onCommit: (Int) -> Unit) =
+        EditText(service).apply {
+            setText(value)
+            hint = hintText
+            setHintTextColor(0xFFBBBBBB.toInt())
+            setTextColor(Color.WHITE)
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_NUMBER
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setSelectAllOnFocus(true)
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    text.toString().toIntOrNull()?.let(onCommit)
+                    clearFocus()
+                    true
+                } else {
+                    false
+                }
+            }
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) text.toString().toIntOrNull()?.let(onCommit)
+            }
+        }
 
     private fun textField(
         labelText: String,
