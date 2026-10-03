@@ -78,7 +78,14 @@ import com.autoclickerplus.model.withEnabled
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.DEFAULT_IF_TRUE_SOUND_DURATION_MS
+import com.autoclickerplus.model.DEFAULT_IF_TRUE_VIBRATION_DURATION_MS
+import com.autoclickerplus.model.IfTrueFeedback
+import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.MAX_IF_TRUE_SOUND_DURATION_MS
+import com.autoclickerplus.model.MAX_IF_TRUE_VIBRATION_DURATION_MS
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.ScriptLibrary
@@ -517,6 +524,25 @@ private fun RepeatSection(config: AutomationConfig, viewModel: AutomationViewMod
                 )
             }
         }
+        Text(
+            "失敗時の動作",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(
+                selected = config.onFailurePolicy == OnFailurePolicy.STOP,
+                onClick = { viewModel.setOnFailurePolicy(OnFailurePolicy.STOP) },
+            )
+            Text("停止")
+            RadioButton(
+                selected = config.onFailurePolicy == OnFailurePolicy.RESTART_FROM_BEGINNING,
+                onClick = {
+                    viewModel.setOnFailurePolicy(OnFailurePolicy.RESTART_FROM_BEGINNING)
+                },
+            )
+            Text("最初からやり直す")
+        }
     }
 }
 
@@ -939,6 +965,10 @@ private fun IfBlockCard(
                                 },
                             ) { Text(block.operator.name) }
                         }
+                        IfTrueFeedbackEditor(
+                            feedback = block.trueFeedback,
+                            onChange = { viewModel.replace(block.copy(trueFeedback = it)) },
+                        )
                         WaitWithJitterFields(
                             waitMs = block.waitAfterMs,
                             jitterMs = block.waitJitterMs,
@@ -1184,6 +1214,110 @@ private fun ConditionEditor(
         }
     }
 }
+
+@Composable
+private fun IfTrueFeedbackEditor(
+    feedback: IfTrueFeedback,
+    onChange: (IfTrueFeedback) -> Unit,
+) {
+    Column(Modifier.padding(top = 4.dp)) {
+        Text("true時の音・バイブ", style = MaterialTheme.typography.bodySmall)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            IfTrueSound.entries.forEach { sound ->
+                TextButton(onClick = {
+                    onChange(
+                        feedback.copy(
+                            sound = sound,
+                            soundDurationMs = if (sound == IfTrueSound.NONE) {
+                                feedback.soundDurationMs
+                            } else {
+                                feedback.soundDurationMs.coerceAtLeast(
+                                    DEFAULT_IF_TRUE_SOUND_DURATION_MS,
+                                )
+                            },
+                        ),
+                    )
+                }) {
+                    Text("${sound.label}${if (feedback.sound == sound) " ✓" else ""}")
+                }
+            }
+        }
+        if (feedback.sound != IfTrueSound.NONE) {
+            CommitNumberField(
+                value = feedback.soundVolume.toString(),
+                label = "音量 0～100",
+                modifier = Modifier.fillMaxWidth(),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let {
+                        onChange(feedback.copy(soundVolume = it.coerceIn(0, 100)))
+                    }
+                },
+            )
+            CommitNumberField(
+                value = feedback.soundDurationMs.toString(),
+                label = "音の長さ ms",
+                modifier = Modifier.fillMaxWidth(),
+                onCommit = { value ->
+                    value.toIntOrNull()?.let {
+                        onChange(
+                            feedback.copy(
+                                soundDurationMs = it.coerceIn(50, MAX_IF_TRUE_SOUND_DURATION_MS),
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+        TextButton(onClick = {
+            onChange(
+                feedback.copy(
+                    vibrationEnabled = !feedback.vibrationEnabled,
+                    vibrationDurationMs = if (feedback.vibrationEnabled) {
+                        feedback.vibrationDurationMs
+                    } else {
+                        feedback.vibrationDurationMs.coerceAtLeast(
+                            DEFAULT_IF_TRUE_VIBRATION_DURATION_MS,
+                        )
+                    },
+                ),
+            )
+        }) {
+            Text(if (feedback.vibrationEnabled) "バイブ: ON" else "バイブ: OFF")
+        }
+        if (feedback.vibrationEnabled) {
+            CommitNumberField(
+                value = feedback.vibrationDurationMs.toString(),
+                label = "バイブの長さ ms",
+                modifier = Modifier.fillMaxWidth(),
+                onCommit = { value ->
+                    value.toLongOrNull()?.let {
+                        onChange(
+                            feedback.copy(
+                                vibrationDurationMs = it.coerceIn(
+                                    10L,
+                                    MAX_IF_TRUE_VIBRATION_DURATION_MS,
+                                ),
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
+
+private val IfTrueSound.label: String
+    get() = when (this) {
+        IfTrueSound.NONE -> "音なし"
+        IfTrueSound.BEEP -> "ビープ"
+        IfTrueSound.CLICK -> "クリック"
+        IfTrueSound.ALERT -> "アラート"
+    }
 
 @Composable
 private fun BranchEditor(

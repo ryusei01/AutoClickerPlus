@@ -5,7 +5,9 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.IfTrueFeedback
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.resolveJumpTarget
 import com.autoclickerplus.model.resolvedTargetPath
@@ -43,6 +45,10 @@ fun interface ConditionEvaluator {
         conditions: List<AutomationCondition>,
         operator: ConditionOperator,
     ): Boolean
+}
+
+fun interface IfTrueFeedbackPlayer {
+    fun play(feedback: IfTrueFeedback)
 }
 
 class ConditionEvaluationException(message: String, cause: Throwable? = null) :
@@ -120,6 +126,7 @@ class AutomationRunner(
     private val conditionEvaluator: ConditionEvaluator = ConditionEvaluator { _, _ ->
         throw ConditionEvaluationException("条件評価機能が接続されていません")
     },
+    private val ifTrueFeedbackPlayer: IfTrueFeedbackPlayer = IfTrueFeedbackPlayer { _ -> },
     private val randomizer: ActionRandomizer = ActionRandomizer(),
     private val wait: suspend (Long) -> Unit = { delay(it) },
     private val waitForLoopBoundary: suspend () -> Unit = { delay(LOOP_BOUNDARY_MS) },
@@ -184,12 +191,28 @@ class AutomationRunner(
                 )
             } catch (_: LoopBreakException) {
                 return
+            } catch (failure: GestureFailedException) {
+                handleLoopFailure(config, failure)
+                continue
+            } catch (failure: ConditionEvaluationException) {
+                handleLoopFailure(config, failure)
+                continue
+            } catch (failure: JumpLimitException) {
+                handleLoopFailure(config, failure)
+                continue
             }
             loop++
             if (loop < totalLoops) {
                 waitForLoopBoundary()
             }
         }
+    }
+
+    private suspend fun handleLoopFailure(config: AutomationConfig, failure: RuntimeException) {
+        if (config.onFailurePolicy != OnFailurePolicy.RESTART_FROM_BEGINNING) {
+            throw failure
+        }
+        waitForLoopBoundary()
     }
 
     private suspend fun executeActions(
@@ -329,6 +352,9 @@ class AutomationRunner(
             }
             is AutomationAction.IfBlock -> {
                 val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
+                if (matched && action.trueFeedback.hasFeedback) {
+                    runCatching { ifTrueFeedbackPlayer.play(action.trueFeedback) }
+                }
                 val branch = if (matched) action.thenActions else action.elseActions
                 if (!enteredByJump) {
                     resetBranchVisitJumpCounts(branch)

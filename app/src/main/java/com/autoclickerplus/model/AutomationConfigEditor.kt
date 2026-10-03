@@ -86,6 +86,11 @@ object AutomationConfigEditor {
     fun setRepeatCount(config: AutomationConfig, count: Int): AutomationConfig =
         config.copy(repeatCount = count).normalized()
 
+    fun setOnFailurePolicy(
+        config: AutomationConfig,
+        policy: OnFailurePolicy,
+    ): AutomationConfig = config.copy(onFailurePolicy = policy).normalized()
+
     fun setDefaultTapWaitAfterMs(config: AutomationConfig, waitMs: Long): AutomationConfig =
         config.copy(defaultTapWaitAfterMs = waitMs).normalized()
 

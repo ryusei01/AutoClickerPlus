@@ -66,6 +66,13 @@ class AutomationConfigEditorTest {
             1,
             AutomationConfigEditor.setRepeatCount(replaced, -5).repeatCount,
         )
+        assertEquals(
+            OnFailurePolicy.RESTART_FROM_BEGINNING,
+            AutomationConfigEditor.setOnFailurePolicy(
+                replaced,
+                OnFailurePolicy.RESTART_FROM_BEGINNING,
+            ).onFailurePolicy,
+        )
     }
 
     @Test
@@ -78,8 +85,23 @@ class AutomationConfigEditorTest {
             BranchSide.THEN,
             AutomationAction.Tap(id = "nested"),
         )
+        config = AutomationConfigEditor.replace(
+            config,
+            (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
+                .copy(
+                    trueFeedback = IfTrueFeedback(
+                        sound = IfTrueSound.CLICK,
+                        vibrationEnabled = true,
+                    ),
+                ),
+        )
 
         assertEquals("1-T1", AutomationConfigEditor.sequencePath(config, "nested"))
+        assertEquals(
+            IfTrueSound.CLICK,
+            (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
+                .trueFeedback.sound,
+        )
         config = AutomationConfigEditor.replace(
             config,
             (AutomationConfigEditor.findAction(config, "nested") as AutomationAction.Tap)

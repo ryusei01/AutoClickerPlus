@@ -18,6 +18,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.BranchSide
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import kotlin.math.roundToInt
 
@@ -41,6 +42,7 @@ data class OverlayCallbacks(
     val onMove: (String, Int) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
+    val onFailurePolicy: (OnFailurePolicy) -> Unit,
     val onReplaceConfig: (AutomationConfig) -> Unit,
 )
 
@@ -84,6 +86,7 @@ class OverlayController(
                 onPickRegion = callbacks.onPickRegion,
                 onRepeatMode = callbacks.onRepeatMode,
                 onRepeatCount = callbacks.onRepeatCount,
+                onFailurePolicy = callbacks.onFailurePolicy,
                 onClose = {
                     editor.hide()
                     showControls()

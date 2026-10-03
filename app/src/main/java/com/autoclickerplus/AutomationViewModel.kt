@@ -9,6 +9,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.BranchSide
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.ScriptLibrary
 import com.autoclickerplus.model.ScriptLibraryEditor
@@ -101,6 +102,9 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setRepeatCount(count: Int) =
         update { AutomationConfigEditor.setRepeatCount(it, count) }
+
+    fun setOnFailurePolicy(policy: OnFailurePolicy) =
+        update { AutomationConfigEditor.setOnFailurePolicy(it, policy) }
 
     fun setDefaultTapWaitAfterMs(waitMs: Long) =
         update { AutomationConfigEditor.setDefaultTapWaitAfterMs(it, waitMs) }
