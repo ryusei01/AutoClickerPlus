@@ -22,8 +22,11 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     is AutomationAction.IfBlock -> {
         val cond = conditions.firstOrNull()?.summary() ?: "条件なし"
         val extra = if (conditions.size > 1) " ほか${conditions.size - 1}" else ""
-        val sound = if (playSoundOnTrue) " 音あり" else ""
-        "$operator $cond$extra$sound  THEN ${thenActions.size} / ELSE ${elseActions.size}"
+        val feedback = listOfNotNull(
+            if (trueFeedback.sound != IfTrueSound.NONE) "音" else null,
+            if (trueFeedback.vibrationEnabled) "バイブ" else null,
+        ).joinToString("+").takeIf { it.isNotEmpty() }?.let { " $it" } ?: ""
+        "$operator $cond$extra$feedback  THEN ${thenActions.size} / ELSE ${elseActions.size}"
     }
     is AutomationAction.BreakLoop -> "到達したら繰り返しを終了"
     is AutomationAction.Wait -> "${durationMs}ms待つ ±${waitJitterMs}ms"

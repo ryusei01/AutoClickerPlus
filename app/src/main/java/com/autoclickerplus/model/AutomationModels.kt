@@ -47,7 +47,7 @@ sealed class AutomationAction {
         override val id: String = UUID.randomUUID().toString(),
         val conditions: List<AutomationCondition> = listOf(AutomationCondition.TextExists()),
         val operator: ConditionOperator = ConditionOperator.AND,
-        val playSoundOnTrue: Boolean = false,
+        val trueFeedback: IfTrueFeedback = IfTrueFeedback(),
         val thenActions: List<AutomationAction> = emptyList(),
         val elseActions: List<AutomationAction> = emptyList(),
         override val enabled: Boolean = true,
@@ -153,6 +153,33 @@ enum class BranchSide {
     ELSE,
 }
 
+@Serializable
+data class IfTrueFeedback(
+    val sound: IfTrueSound = IfTrueSound.NONE,
+    val soundVolume: Int = DEFAULT_IF_TRUE_SOUND_VOLUME,
+    val soundDurationMs: Int = DEFAULT_IF_TRUE_SOUND_DURATION_MS,
+    val vibrationEnabled: Boolean = false,
+    val vibrationDurationMs: Long = DEFAULT_IF_TRUE_VIBRATION_DURATION_MS,
+) {
+    val hasFeedback: Boolean
+        get() = (sound != IfTrueSound.NONE && soundVolume > 0) || vibrationEnabled
+}
+
+@Serializable
+enum class IfTrueSound {
+    @SerialName("none")
+    NONE,
+
+    @SerialName("beep")
+    BEEP,
+
+    @SerialName("click")
+    CLICK,
+
+    @SerialName("alert")
+    ALERT,
+}
+
 /** 番号へ「戻り回数」のカウント範囲 */
 @Serializable
 enum class JumpLimitScope {
@@ -256,6 +283,7 @@ fun AutomationAction.normalized(): AutomationAction = when (this) {
     is AutomationAction.IfBlock -> copy(
         conditions = conditions.ifEmpty { listOf(AutomationCondition.TextExists()) }
             .map(AutomationCondition::normalized),
+        trueFeedback = trueFeedback.normalized(),
         thenActions = thenActions.map(AutomationAction::normalized),
         elseActions = elseActions.map(AutomationAction::normalized),
         waitAfterMs = waitAfterMs.coerceAtLeast(0L),
@@ -324,6 +352,17 @@ const val DEFAULT_WAIT_JITTER_MS = 30
 const val MAX_WAIT_JITTER_MS = 10_000
 const val DEFAULT_POSITION_JITTER_PX = 1
 const val MAX_POSITION_JITTER_PX = 50
+const val DEFAULT_IF_TRUE_SOUND_VOLUME = 80
+const val DEFAULT_IF_TRUE_SOUND_DURATION_MS = 150
+const val DEFAULT_IF_TRUE_VIBRATION_DURATION_MS = 150L
+const val MAX_IF_TRUE_SOUND_DURATION_MS = 5_000
+const val MAX_IF_TRUE_VIBRATION_DURATION_MS = 5_000L
+
+fun IfTrueFeedback.normalized(): IfTrueFeedback = copy(
+    soundVolume = soundVolume.coerceIn(0, 100),
+    soundDurationMs = soundDurationMs.coerceIn(50, MAX_IF_TRUE_SOUND_DURATION_MS),
+    vibrationDurationMs = vibrationDurationMs.coerceIn(10L, MAX_IF_TRUE_VIBRATION_DURATION_MS),
+)
 
 fun ScreenRegion.normalized(): ScreenRegion = ScreenRegion(
     left = minOf(left, right).coerceAtLeast(0),

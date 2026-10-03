@@ -5,6 +5,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.IfTrueFeedback
 import com.autoclickerplus.model.JumpLimitScope
 import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
@@ -46,8 +47,8 @@ fun interface ConditionEvaluator {
     ): Boolean
 }
 
-fun interface IfTrueSoundPlayer {
-    fun play()
+fun interface IfTrueFeedbackPlayer {
+    fun play(feedback: IfTrueFeedback)
 }
 
 class ConditionEvaluationException(message: String, cause: Throwable? = null) :
@@ -125,7 +126,7 @@ class AutomationRunner(
     private val conditionEvaluator: ConditionEvaluator = ConditionEvaluator { _, _ ->
         throw ConditionEvaluationException("条件評価機能が接続されていません")
     },
-    private val ifTrueSoundPlayer: IfTrueSoundPlayer = IfTrueSoundPlayer {},
+    private val ifTrueFeedbackPlayer: IfTrueFeedbackPlayer = IfTrueFeedbackPlayer { _ -> },
     private val randomizer: ActionRandomizer = ActionRandomizer(),
     private val wait: suspend (Long) -> Unit = { delay(it) },
     private val waitForLoopBoundary: suspend () -> Unit = { delay(LOOP_BOUNDARY_MS) },
@@ -351,8 +352,8 @@ class AutomationRunner(
             }
             is AutomationAction.IfBlock -> {
                 val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
-                if (matched && action.playSoundOnTrue) {
-                    runCatching { ifTrueSoundPlayer.play() }
+                if (matched && action.trueFeedback.hasFeedback) {
+                    runCatching { ifTrueFeedbackPlayer.play(action.trueFeedback) }
                 }
                 val branch = if (matched) action.thenActions else action.elseActions
                 if (!enteredByJump) {

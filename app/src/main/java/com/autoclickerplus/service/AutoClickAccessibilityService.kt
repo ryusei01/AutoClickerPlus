@@ -8,6 +8,8 @@ import android.media.ToneGenerator
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import com.autoclickerplus.data.AutomationRepository
@@ -22,6 +24,9 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.BranchSide
+import com.autoclickerplus.model.IfTrueFeedback
+import com.autoclickerplus.model.IfTrueSound
+import com.autoclickerplus.model.MAX_IF_TRUE_VIBRATION_DURATION_MS
 import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.newBreak
 import com.autoclickerplus.model.newIf
@@ -55,7 +60,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private val configMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var currentConfig = AutomationConfig()
-    private var ifTrueToneGenerator: ToneGenerator? = null
+    private val ifTrueToneGenerators = mutableMapOf<Int, ToneGenerator>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -68,7 +73,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 overlay.hideTransientOverlays()
                 conditionEvaluator.evaluate(conditions, operator)
             },
-            ifTrueSoundPlayer = ::playIfTrueSound,
+            ifTrueFeedbackPlayer = ::playIfTrueFeedback,
         )
         overlay = OverlayController(
             service = this,
@@ -172,8 +177,8 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     override fun onDestroy() {
         if (::runner.isInitialized) runner.stop()
         if (::overlay.isInitialized) overlay.removeAll()
-        ifTrueToneGenerator?.release()
-        ifTrueToneGenerator = null
+        ifTrueToneGenerators.values.forEach { it.release() }
+        ifTrueToneGenerators.clear()
         if (activeService === this) activeService = null
         serviceScope.cancel()
         super.onDestroy()
@@ -444,14 +449,43 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
     private fun screenBounds(): ScreenBounds = overlayScreenBounds()
 
-    private fun playIfTrueSound() {
-        val generator = ifTrueToneGenerator ?: runCatching {
-            ToneGenerator(AudioManager.STREAM_NOTIFICATION, IF_TRUE_TONE_VOLUME)
-        }.getOrNull()?.also {
-            ifTrueToneGenerator = it
-        } ?: return
-        generator.startTone(ToneGenerator.TONE_PROP_BEEP, IF_TRUE_TONE_DURATION_MS)
+    private fun playIfTrueFeedback(feedback: IfTrueFeedback) {
+        playIfTrueSound(feedback)
+        vibrateIfRequested(feedback)
     }
+
+    private fun playIfTrueSound(feedback: IfTrueFeedback) {
+        if (feedback.sound == IfTrueSound.NONE || feedback.soundVolume <= 0) return
+        val volume = feedback.soundVolume.coerceIn(0, 100)
+        val generator = ifTrueToneGenerators[volume] ?: runCatching {
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, volume)
+        }.getOrNull()?.also {
+            ifTrueToneGenerators[volume] = it
+        } ?: return
+        generator.startTone(feedback.sound.toneType, feedback.soundDurationMs)
+    }
+
+    private fun vibrateIfRequested(feedback: IfTrueFeedback) {
+        if (!feedback.vibrationEnabled) return
+        val duration = feedback.vibrationDurationMs.coerceIn(10L, MAX_IF_TRUE_VIBRATION_DURATION_MS)
+        val vibrator = getSystemService(Vibrator::class.java) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(duration)
+        }
+    }
+
+    private val IfTrueSound.toneType: Int
+        get() = when (this) {
+            IfTrueSound.NONE -> ToneGenerator.TONE_PROP_BEEP
+            IfTrueSound.BEEP -> ToneGenerator.TONE_PROP_BEEP
+            IfTrueSound.CLICK -> ToneGenerator.TONE_PROP_ACK
+            IfTrueSound.ALERT -> ToneGenerator.TONE_PROP_NACK
+        }
 
     private fun CancellableContinuation<Boolean>.resumeIfActive(value: Boolean) {
         if (isActive) resume(value)
@@ -471,8 +505,6 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         private const val FULL_SCROLL_SWIPE_COUNT = 8
         private const val FULL_SCROLL_SWIPE_DURATION_MS = 250L
         private const val FULL_SCROLL_SWIPE_GAP_MS = 40L
-        private const val IF_TRUE_TONE_VOLUME = 80
-        private const val IF_TRUE_TONE_DURATION_MS = 150
 
         @Volatile
         private var activeService: AutoClickAccessibilityService? = null

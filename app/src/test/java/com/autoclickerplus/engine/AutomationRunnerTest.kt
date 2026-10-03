@@ -4,6 +4,8 @@ import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.IfTrueFeedback
+import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.JumpLimitScope
 import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
@@ -331,7 +333,7 @@ class AutomationRunnerTest {
     }
 
     @Test
-    fun ifTrueSoundOptionPlaysBeforeThenBranch() = runTest {
+    fun ifTrueFeedbackPlaysBeforeThenBranch() = runTest {
         val calls = mutableListOf<String>()
         val runner = AutomationRunner(
             scope = this,
@@ -349,14 +351,19 @@ class AutomationRunnerTest {
                 ) = true
             },
             conditionEvaluator = ConditionEvaluator { _, _ -> true },
-            ifTrueSoundPlayer = IfTrueSoundPlayer { calls += "sound" },
+            ifTrueFeedbackPlayer = IfTrueFeedbackPlayer { feedback ->
+                calls += "feedback:${feedback.sound}:${feedback.vibrationEnabled}"
+            },
             wait = {},
             waitForLoopBoundary = {},
         )
         val config = AutomationConfig(
             actions = listOf(
                 AutomationAction.IfBlock(
-                    playSoundOnTrue = true,
+                    trueFeedback = IfTrueFeedback(
+                        sound = IfTrueSound.BEEP,
+                        vibrationEnabled = true,
+                    ),
                     thenActions = listOf(AutomationAction.Tap()),
                     elseActions = listOf(AutomationAction.Swipe()),
                 ),
@@ -368,7 +375,47 @@ class AutomationRunnerTest {
         runner.start(config, ScreenBounds(1080, 2400))
         advanceUntilIdle()
 
-        assertEquals(listOf("sound", "tap"), calls)
+        assertEquals(listOf("feedback:BEEP:true", "tap"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
+    fun ifTrueDefaultFeedbackDoesNotPlay() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += "tap"
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            ifTrueFeedbackPlayer = IfTrueFeedbackPlayer { _ -> calls += "feedback" },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    thenActions = listOf(AutomationAction.Tap()),
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("tap"), calls)
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 

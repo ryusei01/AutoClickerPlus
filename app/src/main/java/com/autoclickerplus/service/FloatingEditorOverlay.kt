@@ -28,7 +28,13 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
+import com.autoclickerplus.model.DEFAULT_IF_TRUE_SOUND_DURATION_MS
+import com.autoclickerplus.model.DEFAULT_IF_TRUE_VIBRATION_DURATION_MS
+import com.autoclickerplus.model.IfTrueFeedback
+import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.MAX_IF_TRUE_SOUND_DURATION_MS
+import com.autoclickerplus.model.MAX_IF_TRUE_VIBRATION_DURATION_MS
 import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
@@ -574,14 +580,7 @@ class FloatingEditorOverlay(
                             ),
                         )
                     })
-                    addView(smallButton(
-                        if (block.playSoundOnTrue) "true時に音: ON" else "true時に音: OFF",
-                        true,
-                    ) {
-                        callbacks.onReplace(
-                            block.copy(playSoundOnTrue = !block.playSoundOnTrue),
-                        )
-                    })
+                    addView(ifTrueFeedbackControls(block))
                     addView(numberField(
                         "次の動作までの待機時間 ms",
                         block.waitAfterMs.toString(),
@@ -614,6 +613,89 @@ class FloatingEditorOverlay(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { setMargins(0, dp(2), 0, dp(2)) }
+    }
+
+    private fun ifTrueFeedbackControls(block: AutomationAction.IfBlock) =
+        LinearLayout(service).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+            addView(label("true時の音・バイブ"))
+            addView(HorizontalScrollView(service).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    IfTrueSound.entries.forEach { sound ->
+                        addView(smallButton(
+                            "${sound.displayName}${if (block.trueFeedback.sound == sound) " ✓" else ""}",
+                            true,
+                        ) {
+                            callbacks.onReplace(
+                                block.copy(
+                                    trueFeedback = block.trueFeedback.copy(
+                                        sound = sound,
+                                        soundDurationMs = block.trueFeedback.soundDurationMs
+                                            .coerceAtLeast(DEFAULT_IF_TRUE_SOUND_DURATION_MS),
+                                    ),
+                                ),
+                            )
+                        })
+                    }
+                })
+            })
+            if (block.trueFeedback.sound != IfTrueSound.NONE) {
+                addView(numberField("音量 0～100", block.trueFeedback.soundVolume.toString()) { value ->
+                    updateFeedback(block) {
+                        copy(soundVolume = value.toIntOrNull()?.coerceIn(0, 100) ?: soundVolume)
+                    }
+                })
+                addView(numberField("音の長さ ms", block.trueFeedback.soundDurationMs.toString()) { value ->
+                    updateFeedback(block) {
+                        copy(
+                            soundDurationMs = value.toIntOrNull()
+                                ?.coerceIn(50, MAX_IF_TRUE_SOUND_DURATION_MS)
+                                ?: soundDurationMs,
+                        )
+                    }
+                })
+            }
+            addView(smallButton(
+                if (block.trueFeedback.vibrationEnabled) "バイブ: ON" else "バイブ: OFF",
+                true,
+            ) {
+                updateFeedback(block) {
+                    copy(
+                        vibrationEnabled = !vibrationEnabled,
+                        vibrationDurationMs = if (vibrationEnabled) {
+                            vibrationDurationMs
+                        } else {
+                            vibrationDurationMs.coerceAtLeast(
+                                DEFAULT_IF_TRUE_VIBRATION_DURATION_MS,
+                            )
+                        },
+                    )
+                }
+            })
+            if (block.trueFeedback.vibrationEnabled) {
+                addView(numberField(
+                    "バイブの長さ ms",
+                    block.trueFeedback.vibrationDurationMs.toString(),
+                ) { value ->
+                    updateFeedback(block) {
+                        copy(
+                            vibrationDurationMs = value.toLongOrNull()
+                                ?.coerceIn(10L, MAX_IF_TRUE_VIBRATION_DURATION_MS)
+                                ?: vibrationDurationMs,
+                        )
+                    }
+                })
+            }
+        }
+
+    private fun updateFeedback(
+        block: AutomationAction.IfBlock,
+        transform: IfTrueFeedback.() -> IfTrueFeedback,
+    ) {
+        callbacks.onReplace(block.copy(trueFeedback = block.trueFeedback.transform()))
     }
 
     private fun ifTabBar(
@@ -1160,6 +1242,14 @@ class FloatingEditorOverlay(
 
     private val TextMatchMode.displayName: String
         get() = if (this == TextMatchMode.EXACT) "完全一致" else "部分一致"
+
+    private val IfTrueSound.displayName: String
+        get() = when (this) {
+            IfTrueSound.NONE -> "音なし"
+            IfTrueSound.BEEP -> "ビープ"
+            IfTrueSound.CLICK -> "クリック"
+            IfTrueSound.ALERT -> "アラート"
+        }
 
     private fun Boolean?.nextExpected(): Boolean? = when (this) {
         null -> true
