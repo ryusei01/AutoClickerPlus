@@ -22,7 +22,8 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
     is AutomationAction.IfBlock -> {
         val cond = conditions.firstOrNull()?.summary() ?: "条件なし"
         val extra = if (conditions.size > 1) " ほか${conditions.size - 1}" else ""
-        "$operator $cond$extra  THEN ${thenActions.size} / ELSE ${elseActions.size}"
+        val sound = if (playSoundOnTrue) " 音あり" else ""
+        "$operator $cond$extra$sound  THEN ${thenActions.size} / ELSE ${elseActions.size}"
     }
     is AutomationAction.BreakLoop -> "到達したら繰り返しを終了"
     is AutomationAction.Wait -> "${durationMs}ms待つ ±${waitJitterMs}ms"

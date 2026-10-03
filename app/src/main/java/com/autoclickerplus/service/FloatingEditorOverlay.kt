@@ -574,6 +574,14 @@ class FloatingEditorOverlay(
                             ),
                         )
                     })
+                    addView(smallButton(
+                        if (block.playSoundOnTrue) "true時に音: ON" else "true時に音: OFF",
+                        true,
+                    ) {
+                        callbacks.onReplace(
+                            block.copy(playSoundOnTrue = !block.playSoundOnTrue),
+                        )
+                    })
                     addView(numberField(
                         "次の動作までの待機時間 ms",
                         block.waitAfterMs.toString(),

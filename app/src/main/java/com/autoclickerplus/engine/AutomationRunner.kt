@@ -46,6 +46,10 @@ fun interface ConditionEvaluator {
     ): Boolean
 }
 
+fun interface IfTrueSoundPlayer {
+    fun play()
+}
+
 class ConditionEvaluationException(message: String, cause: Throwable? = null) :
     RuntimeException(message, cause)
 
@@ -121,6 +125,7 @@ class AutomationRunner(
     private val conditionEvaluator: ConditionEvaluator = ConditionEvaluator { _, _ ->
         throw ConditionEvaluationException("条件評価機能が接続されていません")
     },
+    private val ifTrueSoundPlayer: IfTrueSoundPlayer = IfTrueSoundPlayer {},
     private val randomizer: ActionRandomizer = ActionRandomizer(),
     private val wait: suspend (Long) -> Unit = { delay(it) },
     private val waitForLoopBoundary: suspend () -> Unit = { delay(LOOP_BOUNDARY_MS) },
@@ -346,6 +351,9 @@ class AutomationRunner(
             }
             is AutomationAction.IfBlock -> {
                 val matched = conditionEvaluator.evaluate(action.conditions, action.operator)
+                if (matched && action.playSoundOnTrue) {
+                    runCatching { ifTrueSoundPlayer.play() }
+                }
                 val branch = if (matched) action.thenActions else action.elseActions
                 if (!enteredByJump) {
                     resetBranchVisitJumpCounts(branch)

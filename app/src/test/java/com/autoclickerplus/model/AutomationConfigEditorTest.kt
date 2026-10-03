@@ -85,8 +85,18 @@ class AutomationConfigEditorTest {
             BranchSide.THEN,
             AutomationAction.Tap(id = "nested"),
         )
+        config = AutomationConfigEditor.replace(
+            config,
+            (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
+                .copy(playSoundOnTrue = true),
+        )
 
         assertEquals("1-T1", AutomationConfigEditor.sequencePath(config, "nested"))
+        assertEquals(
+            true,
+            (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
+                .playSoundOnTrue,
+        )
         config = AutomationConfigEditor.replace(
             config,
             (AutomationConfigEditor.findAction(config, "nested") as AutomationAction.Tap)

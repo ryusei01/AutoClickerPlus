@@ -47,6 +47,7 @@ sealed class AutomationAction {
         override val id: String = UUID.randomUUID().toString(),
         val conditions: List<AutomationCondition> = listOf(AutomationCondition.TextExists()),
         val operator: ConditionOperator = ConditionOperator.AND,
+        val playSoundOnTrue: Boolean = false,
         val thenActions: List<AutomationAction> = emptyList(),
         val elseActions: List<AutomationAction> = emptyList(),
         override val enabled: Boolean = true,

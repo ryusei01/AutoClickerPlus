@@ -331,6 +331,48 @@ class AutomationRunnerTest {
     }
 
     @Test
+    fun ifTrueSoundOptionPlaysBeforeThenBranch() = runTest {
+        val calls = mutableListOf<String>()
+        val runner = AutomationRunner(
+            scope = this,
+            executor = object : GestureExecutor {
+                override suspend fun tap(point: GesturePoint): Boolean {
+                    calls += "tap"
+                    return true
+                }
+
+                override suspend fun swipe(
+                    start: GesturePoint,
+                    end: GesturePoint,
+                    durationMs: Long,
+                    stopAtEnd: Boolean,
+                ) = true
+            },
+            conditionEvaluator = ConditionEvaluator { _, _ -> true },
+            ifTrueSoundPlayer = IfTrueSoundPlayer { calls += "sound" },
+            wait = {},
+            waitForLoopBoundary = {},
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.IfBlock(
+                    playSoundOnTrue = true,
+                    thenActions = listOf(AutomationAction.Tap()),
+                    elseActions = listOf(AutomationAction.Swipe()),
+                ),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("sound", "tap"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
+    }
+
+    @Test
     fun conditionEvaluationErrorFailsSafely() = runTest {
         val executor = object : GestureExecutor {
             override suspend fun tap(point: GesturePoint) = true

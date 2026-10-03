@@ -3,6 +3,8 @@ package com.autoclickerplus.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -53,6 +55,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private val configMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var currentConfig = AutomationConfig()
+    private var ifTrueToneGenerator: ToneGenerator? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -65,6 +68,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 overlay.hideTransientOverlays()
                 conditionEvaluator.evaluate(conditions, operator)
             },
+            ifTrueSoundPlayer = ::playIfTrueSound,
         )
         overlay = OverlayController(
             service = this,
@@ -168,6 +172,8 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     override fun onDestroy() {
         if (::runner.isInitialized) runner.stop()
         if (::overlay.isInitialized) overlay.removeAll()
+        ifTrueToneGenerator?.release()
+        ifTrueToneGenerator = null
         if (activeService === this) activeService = null
         serviceScope.cancel()
         super.onDestroy()
@@ -438,6 +444,15 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
     private fun screenBounds(): ScreenBounds = overlayScreenBounds()
 
+    private fun playIfTrueSound() {
+        val generator = ifTrueToneGenerator ?: runCatching {
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, IF_TRUE_TONE_VOLUME)
+        }.getOrNull()?.also {
+            ifTrueToneGenerator = it
+        } ?: return
+        generator.startTone(ToneGenerator.TONE_PROP_BEEP, IF_TRUE_TONE_DURATION_MS)
+    }
+
     private fun CancellableContinuation<Boolean>.resumeIfActive(value: Boolean) {
         if (isActive) resume(value)
     }
@@ -456,6 +471,8 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         private const val FULL_SCROLL_SWIPE_COUNT = 8
         private const val FULL_SCROLL_SWIPE_DURATION_MS = 250L
         private const val FULL_SCROLL_SWIPE_GAP_MS = 40L
+        private const val IF_TRUE_TONE_VOLUME = 80
+        private const val IF_TRUE_TONE_DURATION_MS = 150
 
         @Volatile
         private var activeService: AutoClickAccessibilityService? = null

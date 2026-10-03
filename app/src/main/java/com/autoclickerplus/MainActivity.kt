@@ -958,6 +958,15 @@ private fun IfBlockCard(
                                     )
                                 },
                             ) { Text(block.operator.name) }
+                            TextButton(
+                                onClick = {
+                                    viewModel.replace(
+                                        block.copy(playSoundOnTrue = !block.playSoundOnTrue),
+                                    )
+                                },
+                            ) {
+                                Text(if (block.playSoundOnTrue) "true時に音: ON" else "true時に音: OFF")
+                            }
                         }
                         WaitWithJitterFields(
                             waitMs = block.waitAfterMs,
