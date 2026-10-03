@@ -6,6 +6,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.resolveJumpTarget
 import com.autoclickerplus.model.resolvedTargetPath
@@ -184,12 +185,28 @@ class AutomationRunner(
                 )
             } catch (_: LoopBreakException) {
                 return
+            } catch (failure: GestureFailedException) {
+                handleLoopFailure(config, failure)
+                continue
+            } catch (failure: ConditionEvaluationException) {
+                handleLoopFailure(config, failure)
+                continue
+            } catch (failure: JumpLimitException) {
+                handleLoopFailure(config, failure)
+                continue
             }
             loop++
             if (loop < totalLoops) {
                 waitForLoopBoundary()
             }
         }
+    }
+
+    private suspend fun handleLoopFailure(config: AutomationConfig, failure: RuntimeException) {
+        if (config.onFailurePolicy != OnFailurePolicy.RESTART_FROM_BEGINNING) {
+            throw failure
+        }
+        waitForLoopBoundary()
     }
 
     private suspend fun executeActions(

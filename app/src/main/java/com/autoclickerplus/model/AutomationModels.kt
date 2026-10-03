@@ -169,6 +169,7 @@ data class AutomationConfig(
     val actions: List<AutomationAction> = emptyList(),
     val repeatMode: RepeatMode = RepeatMode.INFINITE,
     val repeatCount: Int = 1,
+    val onFailurePolicy: OnFailurePolicy = OnFailurePolicy.STOP,
     val defaultTapWaitAfterMs: Long = DEFAULT_TAP_WAIT_AFTER_MS,
     val defaultSwipeWaitAfterMs: Long = DEFAULT_SWIPE_WAIT_AFTER_MS,
     val defaultIfWaitAfterMs: Long = DEFAULT_IF_WAIT_AFTER_MS,
@@ -181,6 +182,15 @@ data class AutomationConfig(
 enum class RepeatMode {
     INFINITE,
     COUNT,
+}
+
+@Serializable
+enum class OnFailurePolicy {
+    @SerialName("stop")
+    STOP,
+
+    @SerialName("restart_from_beginning")
+    RESTART_FROM_BEGINNING,
 }
 
 @Serializable

@@ -5,6 +5,7 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -193,6 +194,51 @@ class AutomationRunnerTest {
 
         assertEquals(1, callCount)
         assertEquals(RunnerState.FAILED, runner.state.value)
+    }
+
+    @Test
+    fun failurePolicyRestartsCurrentLoopFromBeginning() = runTest {
+        val calls = mutableListOf<String>()
+        var secondAttempts = 0
+        val executor = object : GestureExecutor {
+            override suspend fun tap(point: GesturePoint): Boolean {
+                if (point.x < 50f) {
+                    calls += "first"
+                    return true
+                }
+                calls += "second"
+                secondAttempts++
+                return secondAttempts > 1
+            }
+
+            override suspend fun swipe(
+                start: GesturePoint,
+                end: GesturePoint,
+                durationMs: Long,
+                stopAtEnd: Boolean,
+            ) = true
+        }
+        val runner = AutomationRunner(
+            scope = this,
+            executor = executor,
+            wait = {},
+            waitForLoopBoundary = { calls += "restart" },
+        )
+        val config = AutomationConfig(
+            actions = listOf(
+                AutomationAction.Tap(x = 10f, y = 10f, jitterPx = 0),
+                AutomationAction.Tap(x = 100f, y = 10f, jitterPx = 0),
+            ),
+            repeatMode = RepeatMode.COUNT,
+            repeatCount = 1,
+            onFailurePolicy = OnFailurePolicy.RESTART_FROM_BEGINNING,
+        )
+
+        runner.start(config, ScreenBounds(1080, 2400))
+        advanceUntilIdle()
+
+        assertEquals(listOf("first", "second", "restart", "first", "second"), calls)
+        assertEquals(RunnerState.IDLE, runner.state.value)
     }
 
     @Test

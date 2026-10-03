@@ -29,6 +29,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.TextMatchMode
 import com.autoclickerplus.model.regionOrNull
@@ -70,6 +71,7 @@ data class FloatingEditorCallbacks(
     val onPickRegion: (String, String) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
+    val onFailurePolicy: (OnFailurePolicy) -> Unit,
     val onClose: () -> Unit,
 )
 
@@ -295,6 +297,25 @@ class FloatingEditorOverlay(
                 value.toIntOrNull()?.let(callbacks.onRepeatCount)
             })
         }
+        addView(label("失敗時の動作"))
+        val failureGroup = RadioGroup(service).apply {
+            orientation = RadioGroup.HORIZONTAL
+        }
+        failureGroup.addView(RadioButton(service).apply {
+            text = "停止"
+            setTextColor(Color.WHITE)
+            isChecked = config.onFailurePolicy == OnFailurePolicy.STOP
+            setOnClickListener { callbacks.onFailurePolicy(OnFailurePolicy.STOP) }
+        })
+        failureGroup.addView(RadioButton(service).apply {
+            text = "最初からやり直す"
+            setTextColor(Color.WHITE)
+            isChecked = config.onFailurePolicy == OnFailurePolicy.RESTART_FROM_BEGINNING
+            setOnClickListener {
+                callbacks.onFailurePolicy(OnFailurePolicy.RESTART_FROM_BEGINNING)
+            }
+        })
+        addView(failureGroup)
     }
 
     private fun actionEditor(

@@ -132,6 +132,9 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 onRepeatCount = { count ->
                     mutateConfig { AutomationConfigEditor.setRepeatCount(it, count) }
                 },
+                onFailurePolicy = { policy ->
+                    mutateConfig { AutomationConfigEditor.setOnFailurePolicy(it, policy) }
+                },
                 onReplaceConfig = { config ->
                     replaceConfig(config)
                 },

@@ -66,6 +66,13 @@ class AutomationConfigEditorTest {
             1,
             AutomationConfigEditor.setRepeatCount(replaced, -5).repeatCount,
         )
+        assertEquals(
+            OnFailurePolicy.RESTART_FROM_BEGINNING,
+            AutomationConfigEditor.setOnFailurePolicy(
+                replaced,
+                OnFailurePolicy.RESTART_FROM_BEGINNING,
+            ).onFailurePolicy,
+        )
     }
 
     @Test

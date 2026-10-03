@@ -79,6 +79,7 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
 import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.ScriptLibrary
@@ -516,6 +517,25 @@ private fun RepeatSection(config: AutomationConfig, viewModel: AutomationViewMod
                     },
                 )
             }
+        }
+        Text(
+            "失敗時の動作",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(
+                selected = config.onFailurePolicy == OnFailurePolicy.STOP,
+                onClick = { viewModel.setOnFailurePolicy(OnFailurePolicy.STOP) },
+            )
+            Text("停止")
+            RadioButton(
+                selected = config.onFailurePolicy == OnFailurePolicy.RESTART_FROM_BEGINNING,
+                onClick = {
+                    viewModel.setOnFailurePolicy(OnFailurePolicy.RESTART_FROM_BEGINNING)
+                },
+            )
+            Text("最初からやり直す")
         }
     }
 }
