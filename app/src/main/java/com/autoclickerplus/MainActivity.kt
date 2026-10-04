@@ -1,11 +1,13 @@
 package com.autoclickerplus
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.app.AlertDialog
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,12 +54,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.text.input.ImeAction
@@ -78,11 +82,10 @@ import com.autoclickerplus.model.withEnabled
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
-import com.autoclickerplus.model.DEFAULT_IF_TRUE_SOUND_DURATION_MS
 import com.autoclickerplus.model.DEFAULT_IF_TRUE_VIBRATION_DURATION_MS
 import com.autoclickerplus.model.IfTrueFeedback
-import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.withPickedSound
 import com.autoclickerplus.model.MAX_IF_TRUE_SOUND_DURATION_MS
 import com.autoclickerplus.model.MAX_IF_TRUE_VIBRATION_DURATION_MS
 import com.autoclickerplus.model.OnFailurePolicy
@@ -1220,35 +1223,39 @@ private fun IfTrueFeedbackEditor(
     feedback: IfTrueFeedback,
     onChange: (IfTrueFeedback) -> Unit,
 ) {
+    val context = LocalContext.current
+    val latestFeedback by rememberUpdatedState(feedback)
+    val soundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            onChange(latestFeedback.withPickedSound(context.readPickedIfSound(result.data)))
+        }
+    }
     Column(Modifier.padding(top = 4.dp)) {
         Text("true時の音・バイブ", style = MaterialTheme.typography.bodySmall)
-        Text("音の種類", style = MaterialTheme.typography.bodySmall)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            IfTrueSound.entries.forEach { sound ->
+        Text(
+            "着信音・通知音・アラームから選べます",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = {
+                soundPicker.launch(IfTrueSoundPicker.intent(feedback.soundSourceUri))
+            }) { Text("スマホの音源から選ぶ") }
+            if (!feedback.soundUri.isNullOrBlank()) {
                 TextButton(onClick = {
                     onChange(
-                        feedback.copy(
-                            sound = sound,
-                            soundDurationMs = if (sound == IfTrueSound.NONE) {
-                                feedback.soundDurationMs
-                            } else {
-                                feedback.soundDurationMs.coerceAtLeast(
-                                    DEFAULT_IF_TRUE_SOUND_DURATION_MS,
-                                )
-                            },
-                        ),
+                        feedback.copy(soundUri = null, soundSourceUri = null, soundTitle = ""),
                     )
-                }) {
-                    Text("${sound.label}${if (feedback.sound == sound) " ✓" else ""}")
-                }
+                }) { Text("音なし") }
             }
         }
-        if (feedback.sound != IfTrueSound.NONE) {
+        if (!feedback.soundUri.isNullOrBlank()) {
+            Text(
+                feedback.soundTitle.ifBlank { "選択した音" },
+                style = MaterialTheme.typography.bodyMedium,
+            )
             CommitNumberField(
                 value = feedback.soundVolume.toString(),
                 label = "音量 0～100",
@@ -1261,7 +1268,7 @@ private fun IfTrueFeedbackEditor(
             )
             CommitNumberField(
                 value = feedback.soundDurationMs.toString(),
-                label = "音の長さ ms",
+                label = "再生する長さ ms",
                 modifier = Modifier.fillMaxWidth(),
                 onCommit = { value ->
                     value.toIntOrNull()?.let {
@@ -1311,15 +1318,6 @@ private fun IfTrueFeedbackEditor(
         }
     }
 }
-
-private val IfTrueSound.label: String
-    get() = when (this) {
-        IfTrueSound.NONE -> "音なし"
-        IfTrueSound.BEEP -> "ビープ"
-        IfTrueSound.CONFIRM -> "確認音"
-        IfTrueSound.ERROR -> "エラー音"
-        IfTrueSound.PROMPT -> "呼び出し音"
-    }
 
 @Composable
 private fun BranchEditor(

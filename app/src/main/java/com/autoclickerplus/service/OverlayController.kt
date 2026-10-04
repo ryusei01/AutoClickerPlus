@@ -43,6 +43,7 @@ data class OverlayCallbacks(
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
     val onFailurePolicy: (OnFailurePolicy) -> Unit,
+    val onPickIfSound: (String) -> Unit,
     val onReplaceConfig: (AutomationConfig) -> Unit,
 )
 
@@ -87,6 +88,7 @@ class OverlayController(
                 onRepeatMode = callbacks.onRepeatMode,
                 onRepeatCount = callbacks.onRepeatCount,
                 onFailurePolicy = callbacks.onFailurePolicy,
+                onPickIfSound = callbacks.onPickIfSound,
                 onClose = {
                     editor.hide()
                     showControls()

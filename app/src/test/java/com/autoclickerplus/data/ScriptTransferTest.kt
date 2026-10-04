@@ -3,7 +3,6 @@ package com.autoclickerplus.data
 import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationScript
-import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.ScriptLibrary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -45,7 +44,7 @@ class ScriptTransferTest {
     }
 
     @Test
-    fun importsLegacySoundNamesAsNamedTones() {
+    fun importsDeviceSoundAndIgnoresRetiredPreset() {
         val source = """
             {
               "formatVersion": 1,
@@ -58,13 +57,24 @@ class ScriptTransferTest {
                     "actions": [
                       {
                         "type": "if",
-                        "id": "if-alert",
-                        "trueFeedback": { "sound": "alert" }
-                      },
+                        "id": "if-sound",
+                        "trueFeedback": {
+                          "soundUri": "content://media/internal/audio/media/1",
+                          "soundTitle": "朝"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "script-old-sound",
+                  "name": "旧音",
+                  "config": {
+                    "actions": [
                       {
                         "type": "if",
-                        "id": "if-click",
-                        "trueFeedback": { "sound": "click" }
+                        "id": "if-alert",
+                        "trueFeedback": { "sound": "alert" }
                       }
                     ]
                   }
@@ -74,11 +84,16 @@ class ScriptTransferTest {
         """.trimIndent()
 
         val imported = transfer.importAsNew(ScriptLibrary.default(), source).getOrThrow()
-        val actions = imported.activeScript.config.actions
+        val saved = imported.scripts.first { it.name == "音" }.config.actions
             .filterIsInstance<AutomationAction.IfBlock>()
+            .single()
+        val retired = imported.scripts.first { it.name == "旧音" }.config.actions
+            .filterIsInstance<AutomationAction.IfBlock>()
+            .single()
 
-        assertEquals(IfTrueSound.ERROR, actions[0].trueFeedback.sound)
-        assertEquals(IfTrueSound.CONFIRM, actions[1].trueFeedback.sound)
+        assertEquals("content://media/internal/audio/media/1", saved.trueFeedback.soundUri)
+        assertEquals("朝", saved.trueFeedback.soundTitle)
+        assertEquals(null, retired.trueFeedback.soundUri)
     }
 
     @Test

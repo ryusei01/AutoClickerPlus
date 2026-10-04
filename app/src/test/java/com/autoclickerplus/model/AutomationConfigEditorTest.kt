@@ -90,7 +90,8 @@ class AutomationConfigEditorTest {
             (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
                 .copy(
                     trueFeedback = IfTrueFeedback(
-                        sound = IfTrueSound.CONFIRM,
+                        soundUri = "content://sound",
+                        soundTitle = "朝",
                         vibrationEnabled = true,
                     ),
                 ),
@@ -98,10 +99,15 @@ class AutomationConfigEditorTest {
 
         assertEquals("1-T1", AutomationConfigEditor.sequencePath(config, "nested"))
         assertEquals(
-            IfTrueSound.CONFIRM,
+            "content://sound",
             (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
-                .trueFeedback.sound,
+                .trueFeedback.soundUri,
         )
+        val picked = IfTrueFeedback(soundDurationMs = 150).withPickedSound(
+            PickedIfSound("content://ringtone", "content://ringtone", "朝"),
+        )
+        assertEquals("朝", picked.soundTitle)
+        assertEquals(DEFAULT_IF_TRUE_SOUND_DURATION_MS, picked.soundDurationMs)
         config = AutomationConfigEditor.replace(
             config,
             (AutomationConfigEditor.findAction(config, "nested") as AutomationAction.Tap)

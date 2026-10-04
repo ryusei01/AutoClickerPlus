@@ -23,8 +23,9 @@ fun AutomationAction.flowSummary(fromPath: String = ""): String = when (this) {
         val cond = conditions.firstOrNull()?.summary() ?: "条件なし"
         val extra = if (conditions.size > 1) " ほか${conditions.size - 1}" else ""
         val feedback = listOfNotNull(
-            if (trueFeedback.sound != IfTrueSound.NONE) "音" else null,
-            if (trueFeedback.vibrationEnabled) "バイブ" else null,
+            trueFeedback.soundTitle.takeIf { trueFeedback.hasSound && it.isNotBlank() }
+                ?: "音".takeIf { trueFeedback.hasSound },
+            "バイブ".takeIf { trueFeedback.vibrationEnabled },
         ).joinToString("+").takeIf { it.isNotEmpty() }?.let { " $it" } ?: ""
         "$operator $cond$extra$feedback  THEN ${thenActions.size} / ELSE ${elseActions.size}"
     }

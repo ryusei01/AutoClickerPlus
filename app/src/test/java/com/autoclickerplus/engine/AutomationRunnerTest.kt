@@ -5,7 +5,6 @@ import com.autoclickerplus.model.AutomationCondition
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.ConditionOperator
 import com.autoclickerplus.model.IfTrueFeedback
-import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.JumpLimitScope
 import com.autoclickerplus.model.OnFailurePolicy
 import com.autoclickerplus.model.RepeatMode
@@ -352,7 +351,7 @@ class AutomationRunnerTest {
             },
             conditionEvaluator = ConditionEvaluator { _, _ -> true },
             ifTrueFeedbackPlayer = IfTrueFeedbackPlayer { feedback ->
-                calls += "feedback:${feedback.sound}:${feedback.vibrationEnabled}"
+                calls += "feedback:${feedback.soundUri}:${feedback.vibrationEnabled}"
             },
             wait = {},
             waitForLoopBoundary = {},
@@ -361,7 +360,7 @@ class AutomationRunnerTest {
             actions = listOf(
                 AutomationAction.IfBlock(
                     trueFeedback = IfTrueFeedback(
-                        sound = IfTrueSound.BEEP,
+                        soundUri = "content://sound",
                         vibrationEnabled = true,
                     ),
                     thenActions = listOf(AutomationAction.Tap()),
@@ -375,7 +374,7 @@ class AutomationRunnerTest {
         runner.start(config, ScreenBounds(1080, 2400))
         advanceUntilIdle()
 
-        assertEquals(listOf("feedback:BEEP:true", "tap"), calls)
+        assertEquals(listOf("feedback:content://sound:true", "tap"), calls)
         assertEquals(RunnerState.IDLE, runner.state.value)
     }
 
