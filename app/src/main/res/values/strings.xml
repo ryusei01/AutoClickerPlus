@@ -9,6 +9,8 @@
     <string name="repeat_until_stop">STOPまで</string>
     <string name="repeat_count">回数指定</string>
     <string name="color_picker_title">色を取る位置（照準の中央）</string>
+    <string name="color_position_picker_title">色を判定する位置（照準の中央）</string>
+    <string name="color_position_only">位置だけ決定</string>
     <string name="color_picker_preview_empty">位置を決めたら「色を確認」</string>
     <string name="color_picker_check">色を確認</string>
     <string name="region_picker_title">文字を判別する区域</string>

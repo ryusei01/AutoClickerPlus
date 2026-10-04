@@ -178,8 +178,10 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     fun showColor(
         initialX: Int,
         initialY: Int,
+        positionOnly: Boolean = false,
         onSample: (x: Int, y: Int, done: (Result<Int>) -> Unit) -> Unit,
         onDone: (x: Int, y: Int, color: Int) -> Unit,
+        onPosition: (x: Int, y: Int) -> Unit,
         onCancel: () -> Unit,
     ) {
         hide()
@@ -193,6 +195,7 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             onMoved = { lastColorSample = null },
         )
         showColorControlBar(
+            positionOnly = positionOnly,
             onCheck = { sampleColorAtMarker { /* preview only */ } },
             onDone = {
                 val marker = markerWindows.firstOrNull() ?: return@showColorControlBar
@@ -214,14 +217,20 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
                     }
                 }
             },
+            onPosition = {
+                val marker = markerWindows.firstOrNull() ?: return@showColorControlBar
+                hide()
+                onPosition(marker.centerX.roundToInt(), marker.centerY.roundToInt())
+            },
             onCancel = {
                 hide()
                 onCancel()
             },
         )
-        // 開いた直後にも一回プレビュー
-        markerWindows.firstOrNull()?.view?.post {
-            sampleColorAtMarker { }
+        if (!positionOnly) {
+            markerWindows.firstOrNull()?.view?.post {
+                sampleColorAtMarker { }
+            }
         }
     }
 
@@ -322,8 +331,10 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
     }
 
     private fun showColorControlBar(
+        positionOnly: Boolean,
         onCheck: () -> Unit,
         onDone: () -> Unit,
+        onPosition: () -> Unit,
         onCancel: () -> Unit,
     ) {
         val screen = service.overlayScreenBounds()
@@ -344,7 +355,9 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             contentDescription = "位置指定パネルを移動"
         }
         val titleView = TextView(service).apply {
-            text = service.getString(R.string.color_picker_title)
+            text = service.getString(
+                if (positionOnly) R.string.color_position_picker_title else R.string.color_picker_title,
+            )
             setTextColor(Color.WHITE)
             textSize = 14f
             gravity = Gravity.CENTER
@@ -389,9 +402,9 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
             }
         }
         val doneButton = Button(service).apply {
-            text = "決定"
+            text = if (positionOnly) "位置を決定" else "決定"
             textSize = 14f
-            setOnClickListener { onDone() }
+            setOnClickListener { if (positionOnly) onPosition() else onDone() }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 setMargins(dp(4), 0, 0, 0)
             }
@@ -400,11 +413,21 @@ class CoordinatePickerOverlay(private val service: AccessibilityService) {
         buttonRow.addView(doneButton)
         bar.addView(dragHandle)
         bar.addView(titleView)
-        bar.addView(previewRow)
-        bar.addView(checkButton, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ))
+        if (!positionOnly) {
+            bar.addView(previewRow)
+            bar.addView(checkButton, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+            bar.addView(Button(service).apply {
+                text = service.getString(R.string.color_position_only)
+                textSize = 14f
+                setOnClickListener { onPosition() }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(6) })
+        }
         bar.addView(buttonRow, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,

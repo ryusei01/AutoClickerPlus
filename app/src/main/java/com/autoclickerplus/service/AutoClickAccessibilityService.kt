@@ -3,15 +3,19 @@ package com.autoclickerplus.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
-import android.media.AudioManager
-import android.media.ToneGenerator
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import java.io.File
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
+import com.autoclickerplus.SoundPickerActivity
 import com.autoclickerplus.data.AutomationRepository
 import com.autoclickerplus.engine.AutomationRunner
 import com.autoclickerplus.engine.ConditionEvaluator
@@ -25,8 +29,9 @@ import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationConfigEditor
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.IfTrueFeedback
-import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.MAX_IF_TRUE_VIBRATION_DURATION_MS
+import com.autoclickerplus.model.PickedIfSound
+import com.autoclickerplus.model.withPickedSound
 import com.autoclickerplus.model.ScreenRegion
 import com.autoclickerplus.model.newBreak
 import com.autoclickerplus.model.newIf
@@ -60,7 +65,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     private val configMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var currentConfig = AutomationConfig()
-    private val ifTrueToneGenerators = mutableMapOf<Int, ToneGenerator>()
+    private val soundPlayers = mutableSetOf<MediaPlayer>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -127,7 +132,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                         AutomationConfigEditor.removeCondition(it, blockId, conditionId)
                     }
                 },
-                onPickColor = ::pickColorCondition,
+                onPickColor = { blockId, conditionId ->
+                    pickColorCondition(blockId, conditionId, positionOnly = false)
+                },
+                onPickColorPosition = { blockId, conditionId ->
+                    pickColorCondition(blockId, conditionId, positionOnly = true)
+                },
                 onPickRegion = ::pickRegionCondition,
                 onRemove = { actionId ->
                     mutateConfig { AutomationConfigEditor.remove(it, actionId) }
@@ -144,6 +154,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                 onFailurePolicy = { policy ->
                     mutateConfig { AutomationConfigEditor.setOnFailurePolicy(it, policy) }
                 },
+                onPickIfSound = ::pickIfSound,
                 onReplaceConfig = { config ->
                     replaceConfig(config)
                 },
@@ -177,8 +188,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     override fun onDestroy() {
         if (::runner.isInitialized) runner.stop()
         if (::overlay.isInitialized) overlay.removeAll()
-        ifTrueToneGenerators.values.forEach { it.release() }
-        ifTrueToneGenerators.clear()
+        soundPlayers.toList().forEach(::releaseSoundPlayer)
         if (activeService === this) activeService = null
         serviceScope.cancel()
         super.onDestroy()
@@ -327,8 +337,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         }
     }
 
-    private fun pickColorCondition(ifBlockId: String, conditionId: String) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+    private fun pickColorCondition(
+        ifBlockId: String,
+        conditionId: String,
+        positionOnly: Boolean,
+    ) {
+        if (!positionOnly && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             Toast.makeText(this, "色判定にはAndroid 11以降が必要です", Toast.LENGTH_LONG).show()
             return
         }
@@ -343,6 +357,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             overlay.showColorPicker(
                 initialX = condition.x,
                 initialY = condition.y,
+                positionOnly = positionOnly,
                 onSample = { x, y, done ->
                     serviceScope.launch {
                         done(runCatching { conditionEvaluator.sampleColor(x, y) })
@@ -355,6 +370,18 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                                 it,
                                 ifBlockId,
                                 condition.copy(x = x, y = y, argb = color),
+                            )
+                        }
+                        overlay.showEditor(restoreScrollToActionId = ifBlockId)
+                    }
+                },
+                onPosition = { x, y ->
+                    serviceScope.launch {
+                        updateConfig {
+                            AutomationConfigEditor.replaceCondition(
+                                it,
+                                ifBlockId,
+                                condition.copy(x = x, y = y),
                             )
                         }
                         overlay.showEditor(restoreScrollToActionId = ifBlockId)
@@ -449,20 +476,89 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
     private fun screenBounds(): ScreenBounds = overlayScreenBounds()
 
+    private fun pickIfSound(actionId: String) {
+        val existingUri = (AutomationConfigEditor.findAction(currentConfig, actionId) as? AutomationAction.IfBlock)
+            ?.trueFeedback
+            ?.soundSourceUri
+        val picker = Intent(this, SoundPickerActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(SoundPickerActivity.EXTRA_ACTION_ID, actionId)
+            putExtra(SoundPickerActivity.EXTRA_EXISTING_URI, existingUri)
+        }
+        runCatching { startActivity(picker) }.onFailure {
+            Toast.makeText(this, "音の選択画面を開けません", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun savePickedIfSound(actionId: String, picked: PickedIfSound) {
+        mutateConfig { config ->
+            val block = AutomationConfigEditor.findAction(config, actionId) as? AutomationAction.IfBlock
+                ?: return@mutateConfig config
+            AutomationConfigEditor.replace(
+                config,
+                block.copy(trueFeedback = block.trueFeedback.withPickedSound(picked)),
+            )
+        }
+    }
+
     private fun playIfTrueFeedback(feedback: IfTrueFeedback) {
         playIfTrueSound(feedback)
         vibrateIfRequested(feedback)
     }
 
     private fun playIfTrueSound(feedback: IfTrueFeedback) {
-        if (feedback.sound == IfTrueSound.NONE || feedback.soundVolume <= 0) return
-        val volume = feedback.soundVolume.coerceIn(0, 100)
-        val generator = ifTrueToneGenerators[volume] ?: runCatching {
-            ToneGenerator(AudioManager.STREAM_NOTIFICATION, volume)
-        }.getOrNull()?.also {
-            ifTrueToneGenerators[volume] = it
-        } ?: return
-        generator.startTone(feedback.sound.toneType, feedback.soundDurationMs)
+        if (!feedback.hasSound) return
+        val sources = listOfNotNull(feedback.soundUri, feedback.soundSourceUri)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        for (source in sources) {
+            if (startSound(source, feedback)) return
+        }
+    }
+
+    private fun startSound(source: String, feedback: IfTrueFeedback): Boolean {
+        if (source.startsWith("/") && !File(source).exists()) return false
+        val player = MediaPlayer()
+        soundPlayers += player
+        val volume = feedback.soundVolume.coerceIn(0, 100) / 100f
+        player.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build(),
+        )
+        player.setOnCompletionListener(::releaseSoundPlayer)
+        player.setOnErrorListener { failed, _, _ ->
+            releaseSoundPlayer(failed)
+            true
+        }
+        return try {
+            if (source.startsWith("/")) {
+                player.setDataSource(source)
+            } else {
+                player.setDataSource(this, Uri.parse(source))
+            }
+            player.setOnPreparedListener { prepared ->
+                prepared.setVolume(volume, volume)
+                prepared.start()
+                mainHandler.postDelayed(
+                    { releaseSoundPlayer(prepared) },
+                    feedback.soundDurationMs.toLong(),
+                )
+            }
+            player.prepareAsync()
+            true
+        } catch (_: Exception) {
+            releaseSoundPlayer(player)
+            false
+        }
+    }
+
+    private fun releaseSoundPlayer(player: MediaPlayer) {
+        if (!soundPlayers.remove(player)) return
+        runCatching { player.stop() }
+        runCatching { player.release() }
     }
 
     private fun vibrateIfRequested(feedback: IfTrueFeedback) {
@@ -478,14 +574,6 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             vibrator.vibrate(duration)
         }
     }
-
-    private val IfTrueSound.toneType: Int
-        get() = when (this) {
-            IfTrueSound.NONE -> ToneGenerator.TONE_PROP_BEEP
-            IfTrueSound.BEEP -> ToneGenerator.TONE_PROP_BEEP
-            IfTrueSound.CLICK -> ToneGenerator.TONE_PROP_ACK
-            IfTrueSound.ALERT -> ToneGenerator.TONE_PROP_NACK
-        }
 
     private fun CancellableContinuation<Boolean>.resumeIfActive(value: Boolean) {
         if (isActive) resume(value)
@@ -532,7 +620,13 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
         fun requestColorPick(ifBlockId: String, conditionId: String): Boolean {
             val service = activeService ?: return false
-            service.pickColorCondition(ifBlockId, conditionId)
+            service.pickColorCondition(ifBlockId, conditionId, positionOnly = false)
+            return true
+        }
+
+        fun requestColorPositionPick(ifBlockId: String, conditionId: String): Boolean {
+            val service = activeService ?: return false
+            service.pickColorCondition(ifBlockId, conditionId, positionOnly = true)
             return true
         }
 
@@ -540,6 +634,10 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             val service = activeService ?: return false
             service.pickRegionCondition(ifBlockId, conditionId)
             return true
+        }
+
+        fun applyPickedIfSound(actionId: String, picked: PickedIfSound) {
+            activeService?.savePickedIfSound(actionId, picked)
         }
     }
 }

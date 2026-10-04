@@ -1,11 +1,13 @@
 package com.autoclickerplus
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.app.AlertDialog
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,12 +54,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.text.input.ImeAction
@@ -78,11 +82,10 @@ import com.autoclickerplus.model.withEnabled
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.BranchSide
 import com.autoclickerplus.model.ConditionOperator
-import com.autoclickerplus.model.DEFAULT_IF_TRUE_SOUND_DURATION_MS
 import com.autoclickerplus.model.DEFAULT_IF_TRUE_VIBRATION_DURATION_MS
 import com.autoclickerplus.model.IfTrueFeedback
-import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.JumpLimitScope
+import com.autoclickerplus.model.withPickedSound
 import com.autoclickerplus.model.MAX_IF_TRUE_SOUND_DURATION_MS
 import com.autoclickerplus.model.MAX_IF_TRUE_VIBRATION_DURATION_MS
 import com.autoclickerplus.model.OnFailurePolicy
@@ -194,6 +197,17 @@ class MainActivity : ComponentActivity() {
                             moveTaskToBack(true)
                         }
                     },
+                    onPickColorPosition = { ifBlockId, conditionId ->
+                        if (!AutoClickAccessibilityService.requestColorPositionPick(
+                                ifBlockId,
+                                conditionId,
+                            )
+                        ) {
+                            toast("先に操作サービスを有効にしてください")
+                        } else {
+                            moveTaskToBack(true)
+                        }
+                    },
                     onPickRegion = { ifBlockId, conditionId ->
                         if (!AutoClickAccessibilityService.requestRegionPick(
                                 ifBlockId,
@@ -233,6 +247,7 @@ private fun AutomationScreen(
     onPickCoordinates: (String) -> Unit,
     onPickAllCoordinates: () -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
@@ -296,6 +311,7 @@ private fun AutomationScreen(
                             viewModel = viewModel,
                             onPickCoordinates = onPickCoordinates,
                             onPickColor = onPickColor,
+                            onPickColorPosition = onPickColorPosition,
                             onPickRegion = onPickRegion,
                         )
                         if (index < config.actions.lastIndex) {
@@ -830,6 +846,7 @@ private fun ActionTreeCard(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     when (action) {
@@ -885,6 +902,7 @@ private fun ActionTreeCard(
             viewModel = viewModel,
             onPickCoordinates = onPickCoordinates,
             onPickColor = onPickColor,
+            onPickColorPosition = onPickColorPosition,
             onPickRegion = onPickRegion,
         )
     }
@@ -901,6 +919,7 @@ private fun IfBlockCard(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     var expanded by remember(block.id) { mutableStateOf(false) }
@@ -982,6 +1001,9 @@ private fun IfBlockCard(
                                 onReplace = { viewModel.replaceCondition(block.id, it) },
                                 onRemove = { viewModel.removeCondition(block.id, condition.id) },
                                 onPickColor = { onPickColor(block.id, condition.id) },
+                                onPickColorPosition = {
+                                    onPickColorPosition(block.id, condition.id)
+                                },
                                 onPickRegion = { onPickRegion(block.id, condition.id) },
                             )
                         }
@@ -1007,6 +1029,7 @@ private fun IfBlockCard(
                         viewModel = viewModel,
                         onPickCoordinates = onPickCoordinates,
                         onPickColor = onPickColor,
+                        onPickColorPosition = onPickColorPosition,
                         onPickRegion = onPickRegion,
                     )
                     IfEditTab.ELSE -> BranchEditor(
@@ -1019,6 +1042,7 @@ private fun IfBlockCard(
                         viewModel = viewModel,
                         onPickCoordinates = onPickCoordinates,
                         onPickColor = onPickColor,
+                        onPickColorPosition = onPickColorPosition,
                         onPickRegion = onPickRegion,
                     )
                 }
@@ -1095,6 +1119,7 @@ private fun ConditionEditor(
     onReplace: (AutomationCondition) -> Unit,
     onRemove: () -> Unit,
     onPickColor: () -> Unit,
+    onPickColorPosition: () -> Unit,
     onPickRegion: () -> Unit,
 ) {
     Column(Modifier.padding(start = 8.dp, bottom = 6.dp)) {
@@ -1152,8 +1177,13 @@ private fun ConditionEditor(
                 )
             }
             is AutomationCondition.PixelColor -> {
-                OutlinedButton(onClick = onPickColor) {
-                    Text("画面から色を取得")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onPickColor) {
+                        Text("画面から色を取得")
+                    }
+                    OutlinedButton(onClick = onPickColorPosition) {
+                        Text("位置だけ指定")
+                    }
                 }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1220,34 +1250,39 @@ private fun IfTrueFeedbackEditor(
     feedback: IfTrueFeedback,
     onChange: (IfTrueFeedback) -> Unit,
 ) {
+    val context = LocalContext.current
+    val latestFeedback by rememberUpdatedState(feedback)
+    val soundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            onChange(latestFeedback.withPickedSound(context.readPickedIfSound(result.data)))
+        }
+    }
     Column(Modifier.padding(top = 4.dp)) {
         Text("true時の音・バイブ", style = MaterialTheme.typography.bodySmall)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            IfTrueSound.entries.forEach { sound ->
+        Text(
+            "着信音・通知音・アラームから選べます",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = {
+                soundPicker.launch(IfTrueSoundPicker.intent(feedback.soundSourceUri))
+            }) { Text("スマホの音源から選ぶ") }
+            if (!feedback.soundUri.isNullOrBlank()) {
                 TextButton(onClick = {
                     onChange(
-                        feedback.copy(
-                            sound = sound,
-                            soundDurationMs = if (sound == IfTrueSound.NONE) {
-                                feedback.soundDurationMs
-                            } else {
-                                feedback.soundDurationMs.coerceAtLeast(
-                                    DEFAULT_IF_TRUE_SOUND_DURATION_MS,
-                                )
-                            },
-                        ),
+                        feedback.copy(soundUri = null, soundSourceUri = null, soundTitle = ""),
                     )
-                }) {
-                    Text("${sound.label}${if (feedback.sound == sound) " ✓" else ""}")
-                }
+                }) { Text("音なし") }
             }
         }
-        if (feedback.sound != IfTrueSound.NONE) {
+        if (!feedback.soundUri.isNullOrBlank()) {
+            Text(
+                feedback.soundTitle.ifBlank { "選択した音" },
+                style = MaterialTheme.typography.bodyMedium,
+            )
             CommitNumberField(
                 value = feedback.soundVolume.toString(),
                 label = "音量 0～100",
@@ -1260,7 +1295,7 @@ private fun IfTrueFeedbackEditor(
             )
             CommitNumberField(
                 value = feedback.soundDurationMs.toString(),
-                label = "音の長さ ms",
+                label = "再生する長さ ms",
                 modifier = Modifier.fillMaxWidth(),
                 onCommit = { value ->
                     value.toIntOrNull()?.let {
@@ -1311,14 +1346,6 @@ private fun IfTrueFeedbackEditor(
     }
 }
 
-private val IfTrueSound.label: String
-    get() = when (this) {
-        IfTrueSound.NONE -> "音なし"
-        IfTrueSound.BEEP -> "ビープ"
-        IfTrueSound.CLICK -> "クリック"
-        IfTrueSound.ALERT -> "アラート"
-    }
-
 @Composable
 private fun BranchEditor(
     pathPrefix: String,
@@ -1330,6 +1357,7 @@ private fun BranchEditor(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     Column(
@@ -1362,6 +1390,7 @@ private fun BranchEditor(
                 viewModel = viewModel,
                 onPickCoordinates = onPickCoordinates,
                 onPickColor = onPickColor,
+                onPickColorPosition = onPickColorPosition,
                 onPickRegion = onPickRegion,
             )
         }

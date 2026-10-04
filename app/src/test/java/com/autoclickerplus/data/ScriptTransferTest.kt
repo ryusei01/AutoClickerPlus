@@ -44,6 +44,59 @@ class ScriptTransferTest {
     }
 
     @Test
+    fun importsDeviceSoundAndIgnoresRetiredPreset() {
+        val source = """
+            {
+              "formatVersion": 1,
+              "exportedAtEpochMs": 1,
+              "scripts": [
+                {
+                  "id": "script-sound",
+                  "name": "音",
+                  "config": {
+                    "actions": [
+                      {
+                        "type": "if",
+                        "id": "if-sound",
+                        "trueFeedback": {
+                          "soundUri": "content://media/internal/audio/media/1",
+                          "soundTitle": "朝"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "script-old-sound",
+                  "name": "旧音",
+                  "config": {
+                    "actions": [
+                      {
+                        "type": "if",
+                        "id": "if-alert",
+                        "trueFeedback": { "sound": "alert" }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val imported = transfer.importAsNew(ScriptLibrary.default(), source).getOrThrow()
+        val saved = imported.scripts.first { it.name == "音" }.config.actions
+            .filterIsInstance<AutomationAction.IfBlock>()
+            .single()
+        val retired = imported.scripts.first { it.name == "旧音" }.config.actions
+            .filterIsInstance<AutomationAction.IfBlock>()
+            .single()
+
+        assertEquals("content://media/internal/audio/media/1", saved.trueFeedback.soundUri)
+        assertEquals("朝", saved.trueFeedback.soundTitle)
+        assertEquals(null, retired.trueFeedback.soundUri)
+    }
+
+    @Test
     fun rejectsEmptyScriptBundle() {
         val empty = """{"formatVersion":1,"exportedAtEpochMs":1,"scripts":[]}"""
         assertTrue(transfer.importAsNew(ScriptLibrary.default(), empty).isFailure)

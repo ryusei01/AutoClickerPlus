@@ -37,12 +37,14 @@ data class OverlayCallbacks(
     val onReplaceCondition: (String, AutomationCondition) -> Unit,
     val onRemoveCondition: (String, String) -> Unit,
     val onPickColor: (String, String) -> Unit,
+    val onPickColorPosition: (String, String) -> Unit,
     val onPickRegion: (String, String) -> Unit,
     val onRemove: (String) -> Unit,
     val onMove: (String, Int) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
     val onFailurePolicy: (OnFailurePolicy) -> Unit,
+    val onPickIfSound: (String) -> Unit,
     val onReplaceConfig: (AutomationConfig) -> Unit,
 )
 
@@ -83,10 +85,12 @@ class OverlayController(
                 onPickCoordinates = ::showPicker,
                 onPickAllCoordinates = ::showAllPicker,
                 onPickColor = callbacks.onPickColor,
+                onPickColorPosition = callbacks.onPickColorPosition,
                 onPickRegion = callbacks.onPickRegion,
                 onRepeatMode = callbacks.onRepeatMode,
                 onRepeatCount = callbacks.onRepeatCount,
                 onFailurePolicy = callbacks.onFailurePolicy,
+                onPickIfSound = callbacks.onPickIfSound,
                 onClose = {
                     editor.hide()
                     showControls()
@@ -255,8 +259,10 @@ class OverlayController(
     fun showColorPicker(
         initialX: Int,
         initialY: Int,
+        positionOnly: Boolean = false,
         onSample: (x: Int, y: Int, done: (Result<Int>) -> Unit) -> Unit,
         onDone: (x: Int, y: Int, color: Int) -> Unit,
+        onPosition: (x: Int, y: Int) -> Unit,
         restoreScrollToActionId: String? = null,
     ) {
         removeControls()
@@ -264,8 +270,10 @@ class OverlayController(
         picker.showColor(
             initialX = initialX,
             initialY = initialY,
+            positionOnly = positionOnly,
             onSample = onSample,
             onDone = onDone,
+            onPosition = onPosition,
             onCancel = {
                 editor.show(config, restoreScrollToActionId = restoreScrollToActionId)
             },
