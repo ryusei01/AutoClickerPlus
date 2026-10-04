@@ -1,7 +1,13 @@
 package com.autoclickerplus.model
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import java.util.UUID
 
 @Serializable
@@ -165,19 +171,39 @@ data class IfTrueFeedback(
         get() = (sound != IfTrueSound.NONE && soundVolume > 0) || vibrationEnabled
 }
 
-@Serializable
+@Serializable(with = IfTrueSoundSerializer::class)
 enum class IfTrueSound {
-    @SerialName("none")
     NONE,
-
-    @SerialName("beep")
     BEEP,
+    CONFIRM,
+    ERROR,
+    PROMPT,
+}
 
-    @SerialName("click")
-    CLICK,
+internal object IfTrueSoundSerializer : KSerializer<IfTrueSound> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("IfTrueSound", PrimitiveKind.STRING)
 
-    @SerialName("alert")
-    ALERT,
+    override fun serialize(encoder: Encoder, value: IfTrueSound) {
+        encoder.encodeString(
+            when (value) {
+                IfTrueSound.NONE -> "none"
+                IfTrueSound.BEEP -> "beep"
+                IfTrueSound.CONFIRM -> "confirm"
+                IfTrueSound.ERROR -> "error"
+                IfTrueSound.PROMPT -> "prompt"
+            },
+        )
+    }
+
+    override fun deserialize(decoder: Decoder): IfTrueSound = when (decoder.decodeString()) {
+        "none" -> IfTrueSound.NONE
+        "beep" -> IfTrueSound.BEEP
+        "confirm", "click" -> IfTrueSound.CONFIRM
+        "error", "alert" -> IfTrueSound.ERROR
+        "prompt" -> IfTrueSound.PROMPT
+        else -> IfTrueSound.NONE
+    }
 }
 
 /** 番号へ「戻り回数」のカウント範囲 */

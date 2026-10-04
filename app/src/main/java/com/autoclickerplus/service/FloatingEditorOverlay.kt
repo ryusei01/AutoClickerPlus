@@ -620,6 +620,7 @@ class FloatingEditorOverlay(
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(4), 0, dp(4))
             addView(label("true時の音・バイブ"))
+            addView(label("音の種類"))
             addView(HorizontalScrollView(service).apply {
                 isHorizontalScrollBarEnabled = false
                 addView(LinearLayout(service).apply {
@@ -1247,8 +1248,9 @@ class FloatingEditorOverlay(
         get() = when (this) {
             IfTrueSound.NONE -> "音なし"
             IfTrueSound.BEEP -> "ビープ"
-            IfTrueSound.CLICK -> "クリック"
-            IfTrueSound.ALERT -> "アラート"
+            IfTrueSound.CONFIRM -> "確認音"
+            IfTrueSound.ERROR -> "エラー音"
+            IfTrueSound.PROMPT -> "呼び出し音"
         }
 
     private fun Boolean?.nextExpected(): Boolean? = when (this) {

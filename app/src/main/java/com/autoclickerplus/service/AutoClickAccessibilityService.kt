@@ -458,7 +458,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         if (feedback.sound == IfTrueSound.NONE || feedback.soundVolume <= 0) return
         val volume = feedback.soundVolume.coerceIn(0, 100)
         val generator = ifTrueToneGenerators[volume] ?: runCatching {
-            ToneGenerator(AudioManager.STREAM_NOTIFICATION, volume)
+            ToneGenerator(AudioManager.STREAM_MUSIC, volume)
         }.getOrNull()?.also {
             ifTrueToneGenerators[volume] = it
         } ?: return
@@ -483,8 +483,9 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         get() = when (this) {
             IfTrueSound.NONE -> ToneGenerator.TONE_PROP_BEEP
             IfTrueSound.BEEP -> ToneGenerator.TONE_PROP_BEEP
-            IfTrueSound.CLICK -> ToneGenerator.TONE_PROP_ACK
-            IfTrueSound.ALERT -> ToneGenerator.TONE_PROP_NACK
+            IfTrueSound.CONFIRM -> ToneGenerator.TONE_PROP_ACK
+            IfTrueSound.ERROR -> ToneGenerator.TONE_PROP_NACK
+            IfTrueSound.PROMPT -> ToneGenerator.TONE_PROP_PROMPT
         }
 
     private fun CancellableContinuation<Boolean>.resumeIfActive(value: Boolean) {

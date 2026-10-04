@@ -1222,6 +1222,7 @@ private fun IfTrueFeedbackEditor(
 ) {
     Column(Modifier.padding(top = 4.dp)) {
         Text("true時の音・バイブ", style = MaterialTheme.typography.bodySmall)
+        Text("音の種類", style = MaterialTheme.typography.bodySmall)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1315,8 +1316,9 @@ private val IfTrueSound.label: String
     get() = when (this) {
         IfTrueSound.NONE -> "音なし"
         IfTrueSound.BEEP -> "ビープ"
-        IfTrueSound.CLICK -> "クリック"
-        IfTrueSound.ALERT -> "アラート"
+        IfTrueSound.CONFIRM -> "確認音"
+        IfTrueSound.ERROR -> "エラー音"
+        IfTrueSound.PROMPT -> "呼び出し音"
     }
 
 @Composable

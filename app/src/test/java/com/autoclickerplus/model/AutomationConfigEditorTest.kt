@@ -90,7 +90,7 @@ class AutomationConfigEditorTest {
             (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
                 .copy(
                     trueFeedback = IfTrueFeedback(
-                        sound = IfTrueSound.CLICK,
+                        sound = IfTrueSound.CONFIRM,
                         vibrationEnabled = true,
                     ),
                 ),
@@ -98,7 +98,7 @@ class AutomationConfigEditorTest {
 
         assertEquals("1-T1", AutomationConfigEditor.sequencePath(config, "nested"))
         assertEquals(
-            IfTrueSound.CLICK,
+            IfTrueSound.CONFIRM,
             (AutomationConfigEditor.findAction(config, "if") as AutomationAction.IfBlock)
                 .trueFeedback.sound,
         )

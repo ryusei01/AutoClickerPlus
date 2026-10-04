@@ -3,6 +3,7 @@ package com.autoclickerplus.data
 import com.autoclickerplus.model.AutomationAction
 import com.autoclickerplus.model.AutomationConfig
 import com.autoclickerplus.model.AutomationScript
+import com.autoclickerplus.model.IfTrueSound
 import com.autoclickerplus.model.ScriptLibrary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -41,6 +42,43 @@ class ScriptTransferTest {
             "tap-one",
             imported.scripts[1].config.actions.single().id,
         )
+    }
+
+    @Test
+    fun importsLegacySoundNamesAsNamedTones() {
+        val source = """
+            {
+              "formatVersion": 1,
+              "exportedAtEpochMs": 1,
+              "scripts": [
+                {
+                  "id": "script-sound",
+                  "name": "音",
+                  "config": {
+                    "actions": [
+                      {
+                        "type": "if",
+                        "id": "if-alert",
+                        "trueFeedback": { "sound": "alert" }
+                      },
+                      {
+                        "type": "if",
+                        "id": "if-click",
+                        "trueFeedback": { "sound": "click" }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val imported = transfer.importAsNew(ScriptLibrary.default(), source).getOrThrow()
+        val actions = imported.activeScript.config.actions
+            .filterIsInstance<AutomationAction.IfBlock>()
+
+        assertEquals(IfTrueSound.ERROR, actions[0].trueFeedback.sound)
+        assertEquals(IfTrueSound.CONFIRM, actions[1].trueFeedback.sound)
     }
 
     @Test
