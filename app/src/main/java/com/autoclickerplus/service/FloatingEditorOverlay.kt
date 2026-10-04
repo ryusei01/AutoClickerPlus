@@ -72,6 +72,7 @@ data class FloatingEditorCallbacks(
     val onPickCoordinates: (String) -> Unit,
     val onPickAllCoordinates: () -> Unit,
     val onPickColor: (String, String) -> Unit,
+    val onPickColorPosition: (String, String) -> Unit,
     val onPickRegion: (String, String) -> Unit,
     val onRepeatMode: (RepeatMode) -> Unit,
     val onRepeatCount: (Int) -> Unit,
@@ -804,8 +805,14 @@ class FloatingEditorOverlay(
                     })
                     addView(label(String.format("#%08X", condition.argb)))
                 })
-                addView(smallButton("画面から色を取得", true) {
-                    callbacks.onPickColor(blockId, condition.id)
+                addView(LinearLayout(service).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(smallButton("画面から色を取得", true) {
+                        callbacks.onPickColor(blockId, condition.id)
+                    })
+                    addView(smallButton("位置だけ指定", true) {
+                        callbacks.onPickColorPosition(blockId, condition.id)
+                    })
                 })
                 addView(LinearLayout(service).apply {
                     orientation = LinearLayout.HORIZONTAL

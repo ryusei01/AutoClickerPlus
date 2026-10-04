@@ -197,6 +197,17 @@ class MainActivity : ComponentActivity() {
                             moveTaskToBack(true)
                         }
                     },
+                    onPickColorPosition = { ifBlockId, conditionId ->
+                        if (!AutoClickAccessibilityService.requestColorPositionPick(
+                                ifBlockId,
+                                conditionId,
+                            )
+                        ) {
+                            toast("先に操作サービスを有効にしてください")
+                        } else {
+                            moveTaskToBack(true)
+                        }
+                    },
                     onPickRegion = { ifBlockId, conditionId ->
                         if (!AutoClickAccessibilityService.requestRegionPick(
                                 ifBlockId,
@@ -236,6 +247,7 @@ private fun AutomationScreen(
     onPickCoordinates: (String) -> Unit,
     onPickAllCoordinates: () -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
@@ -299,6 +311,7 @@ private fun AutomationScreen(
                             viewModel = viewModel,
                             onPickCoordinates = onPickCoordinates,
                             onPickColor = onPickColor,
+                            onPickColorPosition = onPickColorPosition,
                             onPickRegion = onPickRegion,
                         )
                         if (index < config.actions.lastIndex) {
@@ -833,6 +846,7 @@ private fun ActionTreeCard(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     when (action) {
@@ -888,6 +902,7 @@ private fun ActionTreeCard(
             viewModel = viewModel,
             onPickCoordinates = onPickCoordinates,
             onPickColor = onPickColor,
+            onPickColorPosition = onPickColorPosition,
             onPickRegion = onPickRegion,
         )
     }
@@ -904,6 +919,7 @@ private fun IfBlockCard(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     var expanded by remember(block.id) { mutableStateOf(false) }
@@ -985,6 +1001,9 @@ private fun IfBlockCard(
                                 onReplace = { viewModel.replaceCondition(block.id, it) },
                                 onRemove = { viewModel.removeCondition(block.id, condition.id) },
                                 onPickColor = { onPickColor(block.id, condition.id) },
+                                onPickColorPosition = {
+                                    onPickColorPosition(block.id, condition.id)
+                                },
                                 onPickRegion = { onPickRegion(block.id, condition.id) },
                             )
                         }
@@ -1010,6 +1029,7 @@ private fun IfBlockCard(
                         viewModel = viewModel,
                         onPickCoordinates = onPickCoordinates,
                         onPickColor = onPickColor,
+                        onPickColorPosition = onPickColorPosition,
                         onPickRegion = onPickRegion,
                     )
                     IfEditTab.ELSE -> BranchEditor(
@@ -1022,6 +1042,7 @@ private fun IfBlockCard(
                         viewModel = viewModel,
                         onPickCoordinates = onPickCoordinates,
                         onPickColor = onPickColor,
+                        onPickColorPosition = onPickColorPosition,
                         onPickRegion = onPickRegion,
                     )
                 }
@@ -1098,6 +1119,7 @@ private fun ConditionEditor(
     onReplace: (AutomationCondition) -> Unit,
     onRemove: () -> Unit,
     onPickColor: () -> Unit,
+    onPickColorPosition: () -> Unit,
     onPickRegion: () -> Unit,
 ) {
     Column(Modifier.padding(start = 8.dp, bottom = 6.dp)) {
@@ -1155,8 +1177,13 @@ private fun ConditionEditor(
                 )
             }
             is AutomationCondition.PixelColor -> {
-                OutlinedButton(onClick = onPickColor) {
-                    Text("画面から色を取得")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onPickColor) {
+                        Text("画面から色を取得")
+                    }
+                    OutlinedButton(onClick = onPickColorPosition) {
+                        Text("位置だけ指定")
+                    }
                 }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1330,6 +1357,7 @@ private fun BranchEditor(
     viewModel: AutomationViewModel,
     onPickCoordinates: (String) -> Unit,
     onPickColor: (String, String) -> Unit,
+    onPickColorPosition: (String, String) -> Unit,
     onPickRegion: (String, String) -> Unit,
 ) {
     Column(
@@ -1362,6 +1390,7 @@ private fun BranchEditor(
                 viewModel = viewModel,
                 onPickCoordinates = onPickCoordinates,
                 onPickColor = onPickColor,
+                onPickColorPosition = onPickColorPosition,
                 onPickRegion = onPickRegion,
             )
         }

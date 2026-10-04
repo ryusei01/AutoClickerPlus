@@ -132,7 +132,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                         AutomationConfigEditor.removeCondition(it, blockId, conditionId)
                     }
                 },
-                onPickColor = ::pickColorCondition,
+                onPickColor = { blockId, conditionId ->
+                    pickColorCondition(blockId, conditionId, positionOnly = false)
+                },
+                onPickColorPosition = { blockId, conditionId ->
+                    pickColorCondition(blockId, conditionId, positionOnly = true)
+                },
                 onPickRegion = ::pickRegionCondition,
                 onRemove = { actionId ->
                     mutateConfig { AutomationConfigEditor.remove(it, actionId) }
@@ -332,8 +337,12 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
         }
     }
 
-    private fun pickColorCondition(ifBlockId: String, conditionId: String) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+    private fun pickColorCondition(
+        ifBlockId: String,
+        conditionId: String,
+        positionOnly: Boolean,
+    ) {
+        if (!positionOnly && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             Toast.makeText(this, "色判定にはAndroid 11以降が必要です", Toast.LENGTH_LONG).show()
             return
         }
@@ -348,6 +357,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             overlay.showColorPicker(
                 initialX = condition.x,
                 initialY = condition.y,
+                positionOnly = positionOnly,
                 onSample = { x, y, done ->
                     serviceScope.launch {
                         done(runCatching { conditionEvaluator.sampleColor(x, y) })
@@ -360,6 +370,18 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
                                 it,
                                 ifBlockId,
                                 condition.copy(x = x, y = y, argb = color),
+                            )
+                        }
+                        overlay.showEditor(restoreScrollToActionId = ifBlockId)
+                    }
+                },
+                onPosition = { x, y ->
+                    serviceScope.launch {
+                        updateConfig {
+                            AutomationConfigEditor.replaceCondition(
+                                it,
+                                ifBlockId,
+                                condition.copy(x = x, y = y),
                             )
                         }
                         overlay.showEditor(restoreScrollToActionId = ifBlockId)
@@ -598,7 +620,13 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
 
         fun requestColorPick(ifBlockId: String, conditionId: String): Boolean {
             val service = activeService ?: return false
-            service.pickColorCondition(ifBlockId, conditionId)
+            service.pickColorCondition(ifBlockId, conditionId, positionOnly = false)
+            return true
+        }
+
+        fun requestColorPositionPick(ifBlockId: String, conditionId: String): Boolean {
+            val service = activeService ?: return false
+            service.pickColorCondition(ifBlockId, conditionId, positionOnly = true)
             return true
         }
 
