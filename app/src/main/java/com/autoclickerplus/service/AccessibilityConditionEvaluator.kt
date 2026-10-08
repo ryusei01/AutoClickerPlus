@@ -27,7 +27,8 @@ class AccessibilityConditionEvaluator(
     private val service: AccessibilityService,
 ) : ConditionEvaluator {
     private val screenshotMutex = Mutex()
-    private var lastScreenshotAt = 0L
+    /** [AccessibilityService.takeScreenshot] の送信間隔（Android側は uptimeMillis で 333ms） */
+    private var lastScreenshotRequestAt = 0L
 
     suspend fun sampleColor(x: Int, y: Int): Int {
         val bitmap = captureScreenshot()
@@ -206,13 +207,30 @@ class AccessibilityConditionEvaluator(
             throw ConditionEvaluationException("色判定にはAndroid 11以降が必要です")
         }
         return screenshotMutex.withLock {
-            val elapsed = SystemClock.elapsedRealtime() - lastScreenshotAt
-            if (elapsed < MIN_SCREENSHOT_INTERVAL_MS) {
-                delay(MIN_SCREENSHOT_INTERVAL_MS - elapsed)
+            var lastError: ConditionEvaluationException? = null
+            repeat(MAX_SCREENSHOT_ATTEMPTS) { attempt ->
+                waitForScreenshotRequestInterval()
+                lastScreenshotRequestAt = SystemClock.uptimeMillis()
+                try {
+                    return@withLock captureScreenshotApi30()
+                } catch (error: ConditionEvaluationException) {
+                    lastError = error
+                    val rateLimited = error.screenshotErrorCode ==
+                        AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT
+                    if (!rateLimited || attempt == MAX_SCREENSHOT_ATTEMPTS - 1) {
+                        throw error
+                    }
+                    delay(SCREENSHOT_RETRY_DELAY_MS)
+                }
             }
-            captureScreenshotApi30().also {
-                lastScreenshotAt = SystemClock.elapsedRealtime()
-            }
+            throw lastError ?: ConditionEvaluationException("スクリーンショット取得に失敗しました")
+        }
+    }
+
+    private suspend fun waitForScreenshotRequestInterval() {
+        val elapsed = SystemClock.uptimeMillis() - lastScreenshotRequestAt
+        if (elapsed < MIN_SCREENSHOT_REQUEST_INTERVAL_MS) {
+            delay(MIN_SCREENSHOT_REQUEST_INTERVAL_MS - elapsed)
         }
     }
 
@@ -258,6 +276,7 @@ class AccessibilityConditionEvaluator(
                                 Result.failure(
                                     ConditionEvaluationException(
                                         "スクリーンショット取得に失敗しました ($errorCode)",
+                                        screenshotErrorCode = errorCode,
                                     ),
                                 ),
                             )
@@ -268,6 +287,8 @@ class AccessibilityConditionEvaluator(
         }
 
     private companion object {
-        const val MIN_SCREENSHOT_INTERVAL_MS = 500L
+        const val MIN_SCREENSHOT_REQUEST_INTERVAL_MS = 334L
+        const val SCREENSHOT_RETRY_DELAY_MS = 334L
+        const val MAX_SCREENSHOT_ATTEMPTS = 4
     }
 }

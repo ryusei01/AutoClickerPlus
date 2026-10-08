@@ -51,8 +51,11 @@ fun interface IfTrueFeedbackPlayer {
     fun play(feedback: IfTrueFeedback)
 }
 
-class ConditionEvaluationException(message: String, cause: Throwable? = null) :
-    RuntimeException(message, cause)
+class ConditionEvaluationException(
+    message: String,
+    cause: Throwable? = null,
+    val screenshotErrorCode: Int? = null,
+) : RuntimeException(message, cause)
 
 enum class RunnerState {
     IDLE,

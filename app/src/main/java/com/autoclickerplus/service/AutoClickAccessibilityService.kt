@@ -75,8 +75,18 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
             scope = serviceScope,
             executor = this,
             conditionEvaluator = ConditionEvaluator { conditions, operator ->
-                overlay.hideTransientOverlays()
-                conditionEvaluator.evaluate(conditions, operator)
+                val needsColorCapture = conditions.any { it is AutomationCondition.PixelColor }
+                if (needsColorCapture) {
+                    overlay.prepareForColorCapture()
+                    delay(COLOR_CAPTURE_OVERLAY_SETTLE_MS)
+                }
+                try {
+                    conditionEvaluator.evaluate(conditions, operator)
+                } finally {
+                    if (needsColorCapture) {
+                        overlay.restoreAfterColorCapture()
+                    }
+                }
             },
             ifTrueFeedbackPlayer = ::playIfTrueFeedback,
         )
@@ -589,6 +599,7 @@ class AutoClickAccessibilityService : AccessibilityService(), GestureExecutor {
     }
 
     companion object {
+        private const val COLOR_CAPTURE_OVERLAY_SETTLE_MS = 80L
         private const val HOLD_AT_END_MS = 180L
         private const val FULL_SCROLL_SWIPE_COUNT = 8
         private const val FULL_SCROLL_SWIPE_DURATION_MS = 250L

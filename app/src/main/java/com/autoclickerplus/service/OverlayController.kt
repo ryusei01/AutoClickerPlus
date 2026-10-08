@@ -305,6 +305,19 @@ class OverlayController(
         editor.hide()
     }
 
+    /** 色判定のスクショに操作パネルが写らないよう、取得前に呼ぶ */
+    fun prepareForColorCapture() {
+        hideTransientOverlays()
+        removeControls()
+    }
+
+    /** [prepareForColorCapture] の後、実行中パネルを戻す */
+    fun restoreAfterColorCapture() {
+        if (!editor.isVisible && !picker.isVisible) {
+            showControls()
+        }
+    }
+
     fun removeAll() {
         picker.hide()
         editor.hide()
